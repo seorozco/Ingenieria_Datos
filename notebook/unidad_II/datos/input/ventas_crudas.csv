@@ -19,3 +19,4 @@ id_venta,fecha_venta,cliente,monto,moneda,id_producto,cantidad,descuento_pct
 16,29/02/2026,Tomás Rueda,750.0,ARS,106,1,0.0
 17,15/03/2026,Elena Vargas,-500.0,ARS,109,2,0.0
 18,20/03/2026,,1100.0,ARS,101,1,0.10
+

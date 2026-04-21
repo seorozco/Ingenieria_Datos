@@ -15,8 +15,7 @@ __pycache__/
 *.ipynb_checkpoints
 
 # Datos pesados (opcionales — quitar si querés versionar muestras)
-notebook/datos/
-notebook/unidad_II/datos/output/
+notebook/unidad_II/datos/output/*
 
 # IDEs
 .vscode/
