@@ -1,0 +1,10 @@
+id_producto,nombre,categoria,proveedor,precio_lista
+101,Laptop Básica,Computación,TechCo,1500.0
+102,Monitor 24 pulgadas,Periféricos,ViewMax,2300.0
+103,Teclado Mecánico,Periféricos,KeyMaster,850.0
+104,Mouse Inalámbrico,Periféricos,TechCo,450.0
+105,Auriculares USB,Audio,SoundPro,1200.0
+106,Webcam HD,Periféricos,ViewMax,950.0
+107,Disco SSD 1TB,Almacenamiento,DataStore,600.0
+108,Placa de Video,Computación,GfxPro,3200.0
+109,Hub USB 7 puertos,Periféricos,TechCo,450.0
