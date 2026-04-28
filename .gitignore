@@ -24,3 +24,5 @@ notebook/unidad_II/datos/output/*
 # Sistema operativo
 Thumbs.db
 .DS_Store
+
+/notebook/unidad_II/datos/silver/*
