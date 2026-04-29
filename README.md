@@ -118,6 +118,46 @@ El proyecto integrador debe demostrar: fuente real → extracción → transform
 
 ---
 
+## Configuración del Entorno
+
+### 1. Crear el entorno virtual
+
+```bash
+python -m venv .venv
+```
+
+### 2. Activar el entorno virtual
+
+**Windows (PowerShell):**
+```powershell
+.venv\Scripts\Activate.ps1
+```
+
+**Windows (CMD):**
+```cmd
+.venv\Scripts\activate.bat
+```
+
+**macOS / Linux:**
+```bash
+source .venv/bin/activate
+```
+
+### 3. Instalar las dependencias
+
+Cada unidad cuenta con su propio archivo `requirements.txt` ubicado dentro de su carpeta en `notebook/`. Instalá las dependencias correspondientes a la unidad que estés trabajando:
+
+```bash
+# Unidad II
+pip install -r notebook/unidad_II/requirements.txt
+```
+
+A medida que se incorporen nuevas unidades, cada una tendrá su propio `requirements.txt` con las librerías necesarias para esos laboratorios.
+
+> Las notebooks asumen que el entorno virtual ya está activo y con todas las dependencias instaladas. No es necesario ejecutar `pip install` desde dentro de los notebooks.
+
+---
+
 ## Stack Tecnológico
 
 | Categoría | Herramientas |
@@ -147,15 +187,38 @@ Ingenieria_Datos/
 │   ├── Inmon/              # Arquitectura Inmon paso a paso
 │   └── kimball/            # Metodología Kimball paso a paso
 ├── notebook/               # Laboratorios prácticos en Jupyter
-│   └── unidad_II/
+│   └── unidad_II/          # Notebooks de la Unidad II (una carpeta por unidad)
+│       ├── requirements.txt            # Dependencias de la Unidad II
 │       ├── extraccion_sqlserver.ipynb
 │       ├── extraccion_api_publica.ipynb
 │       ├── web_scraping.ipynb
-│       └── bcra_scraping_vs_api.ipynb
+│       ├── bcra_scraping_vs_api.ipynb
+│       ├── transformacion_datos.ipynb
+│       ├── elt_clientes.ipynb
+│       └── datos/                      # Archivos de datos del laboratorio
+│           ├── input/                  # Datos de entrada (CSV, Excel, etc.)
+│           ├── output/                 # Resultados exportados por los notebooks
+│           └── silver/                 # Capa Silver del patrón Medallion (Delta Lake)
 ├── plan_de_estudio.md      # Programa completo de la asignatura
 ├── BIBLIOGRAFIA.md         # Bibliografía sugerida por unidad
 └── README.md               # Este archivo
 ```
+
+### Convención de carpetas en `notebook/`
+
+Cada unidad tiene su propia carpeta dentro de `notebook/` con la siguiente estructura interna:
+
+```
+notebook/unidad_XX/
+├── requirements.txt   # Dependencias exclusivas de esa unidad
+├── *.ipynb            # Notebooks del laboratorio
+└── datos/
+    ├── input/         # Archivos fuente que consumen los notebooks (solo lectura)
+    ├── output/        # Archivos generados: CSVs limpios, reportes, agregaciones
+    └── silver/        # Datos procesados en formato Delta Lake (capa Silver)
+```
+
+> `datos/input/` se incluye en el repositorio como datos de ejemplo. `datos/output/` y `datos/silver/` son generados al ejecutar los notebooks y pueden ser regenerados en cualquier momento.
 
 ---
 

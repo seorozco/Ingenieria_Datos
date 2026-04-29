@@ -446,6 +446,193 @@ SISTEMAS OPERATIVOS (fuentes)
 
 ---
 
+## 7. Gobernanza de Métricas: la Metrics Layer
+
+En organizaciones con múltiples Data Marts y equipos de análisis, un problema recurrente es que distintos reportes calculan la misma métrica de formas diferentes. La **Metrics Layer** (capa de métricas) centraliza las definiciones.
+
+### El problema de las "métricas duplicadas"
+
+```
+Reporte A (del equipo de Ventas):
+  "Ventas Totales" = SUM(fact_ventas.total_neto)
+  
+Reporte B (del equipo de Finanzas):
+  "Ventas Totales" = SUM(fact_ventas.total_neto) - SUM(fact_devoluciones.monto)
+
+Reporte C (del equipo de Marketing):
+  "Ventas Totales" = SUM(fact_ventas.total_neto) WHERE canal = 'E-commerce'
+
+→ Tres equipos dicen "Ventas Totales" y obtienen tres números distintos.
+→ En la reunión de directorio, nadie sabe cuál es el correcto.
+```
+
+### Solución: definir métricas una sola vez
+
+**Con dbt Metrics (Semantic Layer):**
+
+```yaml
+# models/metrics/ventas_metrics.yml
+metrics:
+  - name: ventas_netas
+    label: "Ventas Netas ($)"
+    description: >
+      Suma del total neto de todas las ventas facturadas,
+      sin deducir devoluciones. Definición oficial del
+      glosario corporativo (GOB-MET-001).
+    type: simple
+    type_params:
+      measure: total_neto
+    filter: null  # Sin filtro → incluye todos los canales
+
+  - name: ventas_netas_ecommerce
+    label: "Ventas Netas E-commerce ($)"
+    description: "Ventas netas filtradas por canal E-commerce."
+    type: derived
+    type_params:
+      expr: ventas_netas
+    filter:
+      - "{{ Dimension('canal__tipo') }} = 'E-commerce'"
+
+  - name: ventas_netas_post_devoluciones
+    label: "Ventas Netas Ajustadas ($)"
+    description: >
+      Ventas netas menos devoluciones aceptadas.
+      Usada por Finanzas para conciliación contable.
+    type: derived
+    type_params:
+      expr: "ventas_netas - devoluciones_aceptadas"
+```
+
+**Con LookML (Looker):**
+
+```yaml
+measure: ventas_netas {
+  type: sum
+  sql: ${TABLE}.total_neto ;;
+  label: "Ventas Netas ($)"
+  description: "Definición oficial GOB-MET-001. No incluye devoluciones."
+  value_format_name: decimal_2
+  drill_fields: [dim_cliente.razon_social, dim_producto.nombre, total_neto]
+}
+```
+
+La ventaja de la Metrics Layer es que **cualquier herramienta de BI** que se conecte consume la misma definición. No importa si es Power BI, Tableau, un notebook de Python o una API interna.
+
+---
+
+## 8. Self-Service BI: Habilitando al Usuario
+
+El objetivo final de la arquitectura Kimball es que los usuarios puedan responder sus propias preguntas sin depender del equipo de TI para cada nuevo análisis.
+
+### Niveles de madurez del Self-Service
+
+```
+NIVEL 1 — Consumo pasivo (la mayoría de los usuarios)
+  El usuario abre un dashboard existente, aplica filtros,
+  lee los KPIs. No crea nada nuevo.
+  Herramientas: Power BI (lectura), Tableau (viewer)
+
+NIVEL 2 — Exploración guiada (analistas de negocio)
+  El usuario explora los datos dentro del modelo semántico
+  existente. Arrastra dimensiones y métricas, crea gráficos,
+  guarda visualizaciones personales.
+  Herramientas: Power BI Desktop, Tableau Creator, Looker Explore
+
+NIVEL 3 — Creación de contenido (analistas avanzados)
+  El usuario crea nuevos reportes, nuevas métricas (dentro de
+  las reglas del modelo semántico), y los comparte con colegas.
+  Herramientas: Power BI Service (workspaces), Tableau Cloud
+
+NIVEL 4 — Integración con código (data scientists / analistas técnicos)
+  El usuario conecta el Data Mart directamente desde Python,
+  R o SQL para análisis estadísticos y machine learning.
+  Herramientas: Jupyter Notebooks, DBeaver, DataGrip
+```
+
+### Gobernanza del Self-Service
+
+El Self-Service sin gobernanza es caos. Reglas recomendadas:
+
+| Regla | Descripción |
+|---|---|
+| **Datasets certificados** | Solo los datasets aprobados por el CoE de datos pueden usarse como fuente de reportes oficiales |
+| **Métricas del glosario** | Las métricas oficiales se definen en la Metrics Layer; los usuarios pueden crear métricas propias pero no pueden llamarlas con el mismo nombre |
+| **Espacios de trabajo** | Los reportes "oficiales" viven en un workspace controlado; los análisis ad-hoc en workspaces personales |
+| **Revisión antes de publicar** | Todo reporte que se comparta con más de 5 personas debe ser revisado por el Data Steward |
+| **Lineage visible** | Cada reporte debe mostrar de qué Data Mart se alimenta y cuándo se actualizó por última vez |
+
+---
+
+## 9. Real-Time BI: Más allá del Batch
+
+En algunos escenarios, la carga nocturna no es suficiente. Los usuarios necesitan datos en tiempo real o cuasi-real.
+
+### Streaming al Data Mart
+
+```
+Arquitectura para near-real-time:
+
+Sistema fuente
+      │ CDC (Debezium)
+      ▼
+Kafka / Event Hub
+      │ Stream Processing (Spark Streaming / Flink)
+      ▼
+Data Mart (fact table)
+      │
+      ▼
+Dashboard (refresco automático cada 5 min)
+```
+
+### Estrategia híbrida (batch + streaming)
+
+```
+Datos del día anterior    → Carga batch nocturna (100% correcto)
+Datos del día actual      → Streaming cuasi-real-time (99% correcto)
+                             Se reconcilia con el batch nocturno
+
+El dashboard muestra:
+  "Ventas Marzo 2025 (cerrado): $4.523.810"     ← batch, 100% exacto
+  "Ventas Hoy (provisional): $187.420"           ← streaming, actualización cada 5 min
+```
+
+---
+
+## 10. Kimball en la Era del Data Mesh
+
+El **Data Mesh** (Zhamak Dehghani, 2019) propone que cada dominio de negocio sea responsable de sus propios datos como "productos de datos". ¿Cómo se relaciona con Kimball?
+
+### Compatibilidad Kimball + Data Mesh
+
+| Principio Data Mesh | Cómo se implementa con Kimball |
+|---|---|
+| **Domain Ownership** | Cada equipo de dominio es responsable de su Data Mart |
+| **Data as Product** | El Data Mart es el "producto de datos" que el dominio ofrece a la organización |
+| **Self-serve Platform** | La infraestructura compartida (Snowflake, Airflow, dbt) es la plataforma self-serve |
+| **Federated Governance** | Las dimensiones conformadas son el mecanismo de interoperabilidad gobernado centralmente |
+
+```
+Data Mesh + Kimball:
+
+Dominio Ventas          Dominio Finanzas        Dominio Logística
+(equipo autónomo)       (equipo autónomo)       (equipo autónomo)
+      │                       │                       │
+      ▼                       ▼                       ▼
+  DM Ventas              DM Finanzas            DM Logística
+  (fact_ventas           (fact_pagos             (fact_envios
+   + sus dims)            + sus dims)             + sus dims)
+      │                       │                       │
+      └───────────────────────┼───────────────────────┘
+                              │
+                    Dimensiones Conformadas
+                    (gobernanza federada)
+                    dim_tiempo, dim_cliente, dim_producto
+```
+
+> **Conclusión de Kimball:** Las dimensiones conformadas y el DW Bus son el mecanismo natural para implementar la "interoperabilidad federada" que Data Mesh requiere. Kimball y Data Mesh no son opuestos; son complementarios.
+
+---
+
 ## Lecturas recomendadas
 
 - **Kimball, R., Ross, M., Thornthwaite, W., Mundy, J. & Becker, B.** — *The Data Warehouse Lifecycle Toolkit*, 2da edición. Capítulos 18-21: "BI Application Development", "Deployment", "Growth and Maintenance". Wiley.
@@ -453,3 +640,5 @@ SISTEMAS OPERATIVOS (fuentes)
 - **Few, S.** — *Information Dashboard Design: Displaying Data for At-a-Glance Monitoring*, 2da edición. Analytics Press.
 - **Microsoft** — *The Definitive Guide to DAX*, 2da edición — Ferrari & Russo. Sqlbi.com / Microsoft Press.
 - **Looker** — *LookML Reference Documentation*. [cloud.google.com/looker/docs/lookml-reference](https://cloud.google.com/looker/docs/lookml-reference)
+- **Dehghani, Z.** — *Data Mesh: Delivering Data-Driven Value at Scale*. O'Reilly Media.
+- **dbt Labs** — *dbt Semantic Layer documentation*. [docs.getdbt.com/docs/build/metrics](https://docs.getdbt.com/docs/build/metrics)

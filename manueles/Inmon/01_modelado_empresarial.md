@@ -215,8 +215,241 @@ Sin un modelo empresarial sólido, el EDW de la Etapa 2 se convierte en una base
 
 ---
 
+## Técnicas de Relevamiento para la Construcción del EDM
+
+El modelo empresarial no se construye en un escritorio aislado: requiere un proceso riguroso de relevamiento que combine múltiples técnicas para capturar la realidad del negocio.
+
+### Workshops de Modelado Empresarial
+
+Los workshops son sesiones facilitadas donde arquitectos de datos y expertos de negocio trabajan juntos para identificar entidades, relaciones y definiciones. Son la técnica más efectiva para construir el modelo de alto nivel.
+
+**Estructura recomendada de un workshop:**
+
+| Fase | Duración | Actividad | Participantes |
+|---|---|---|---|
+| **Apertura** | 15 min | Presentar objetivos, alcance y reglas de juego | Todos |
+| **Inventario de entidades** | 60 min | Cada área lista las entidades que maneja y las pone en post-its | Todos |
+| **Agrupamiento y deduplicación** | 30 min | Agrupar entidades similares, identificar sinónimos | Facilitador + todos |
+| **Definición de relaciones** | 60 min | Conectar entidades y definir cardinalidades | Arquitecto + negocio |
+| **Definiciones preliminares** | 45 min | Redactar una definición de una línea para cada entidad | Data Stewards |
+| **Cierre y próximos pasos** | 15 min | Validar el mapa conceptual, asignar responsables | Todos |
+
+**Errores frecuentes en workshops:**
+- Invitar solo a técnicos → el modelo no refleja la realidad del negocio.
+- No tener facilitador → las discusiones se desvían hacia problemas operativos.
+- Intentar llegar al nivel 3 en un solo workshop → fatiga y pérdida de foco.
+
+---
+
+### Entrevistas Estructuradas
+
+Las entrevistas uno-a-uno con Data Owners y expertos de dominio son esenciales para:
+- Capturar reglas de negocio que no se mencionan en grupo.
+- Descubrir excepciones y casos borde.
+- Identificar conflictos de definición entre áreas antes de que emerjan en un workshop grupal.
+
+**Guía de preguntas para entrevistas:**
+
+1. *¿Cuáles son las entidades más importantes de su área?*
+2. *¿Qué reportes o análisis genera con mayor frecuencia?*
+3. *¿Qué datos necesita de otras áreas para hacer su trabajo?*
+4. *¿Cuándo dos registros representan la "misma cosa"? ¿Cuál es el criterio de unicidad?*
+5. *¿Qué datos cambian con frecuencia? ¿Necesita ver cómo eran antes del cambio?*
+6. *¿Hay datos que hoy no tiene y le gustaría tener?*
+7. *¿Cuál es su definición de [término clave]? ¿Coincide con la de [otra área]?*
+
+---
+
+### Análisis de Sistemas Fuente (*Reverse Engineering*)
+
+Cuando la organización no tiene documentación actualizada de sus sistemas, el equipo de datos debe hacer ingeniería reversa: analizar los esquemas de las bases de datos existentes para entender qué datos existen y cómo están estructurados.
+
+**Proceso de reverse engineering:**
+
+```
+1. Obtener el esquema DDL de cada base de datos fuente:
+   → pg_dump --schema-only para PostgreSQL
+   → mysqldump --no-data para MySQL
+   → sp_help para SQL Server
+
+2. Generar diagramas ER automáticos (herramientas: DBeaver, DataGrip, SchemaSpy).
+
+3. Analizar volúmenes (COUNT(*), MAX(date), MIN(date)) para entender
+   qué tablas son activas y cuántos datos históricos hay.
+
+4. Analizar la calidad de los datos fuente:
+   → Porcentaje de nulos por columna
+   → Distribución de valores (¿hay columnas con un solo valor?)
+   → Detección de duplicados
+
+5. Documentar hallazgos y contrastar con lo relevado en workshops.
+```
+
+---
+
+## Anti-patrones Comunes del Modelado Empresarial
+
+La experiencia acumulada en proyectos de Data Warehouse ha identificado errores recurrentes que deben evitarse:
+
+### Anti-patrón 1: Modelo orientado al ERP
+
+Copiar la estructura del ERP como modelo empresarial. El ERP está diseñado para operaciones transaccionales, no para análisis. Un modelo empresarial que refleja exactamente las tablas del ERP heredará todas sus limitaciones: falta de historial, datos desnormalizados por conveniencia operativa, campos multiuso.
+
+**Síntoma:** el modelo tiene tablas como `MATERIAL_MASTER_DATA` o `BSEG` (nombres de SAP).  
+**Solución:** el modelo empresarial debe reflejar la realidad del negocio, no la implementación de un sistema particular.
+
+### Anti-patrón 2: Modelo sin dueño
+
+Construir el modelo pero no asignar responsables de su mantenimiento. En 6 meses, el modelo estará desactualizado y nadie confiará en él.
+
+**Síntoma:** el modelo de datos no se actualiza cuando el negocio cambia.  
+**Solución:** cada área temática debe tener un Data Steward responsable de mantener su porción del modelo actualizada.
+
+### Anti-patrón 3: Análisis paralítico
+
+Intentar modelar toda la organización antes de empezar a construir. El perfeccionismo lleva a que el modelo nunca esté "terminado" y el proyecto se paralice.
+
+**Síntoma:** llevamos 8 meses modelando y no tenemos una sola tabla creada en el EDW.  
+**Solución:** modelado iterativo por áreas temáticas. Empezar con 2-3 áreas temáticas prioritarias y expandir incrementalmente.
+
+### Anti-patrón 4: Confundir modelo lógico con modelo físico
+
+Tomar decisiones de implementación física (tipos de datos, índices, particiones) durante el modelado conceptual/lógico. Esto contamina el modelo con restricciones tecnológicas que limitan su validez a largo plazo.
+
+**Síntoma:** el modelo de alto nivel ya tiene columnas como `VARCHAR(50)` o discusiones sobre particionamiento.  
+**Solución:** respetar la separación de niveles. El modelo conceptual y lógico deben ser independientes de la tecnología.
+
+---
+
+## El Modelo Empresarial en el Contexto Moderno
+
+Si bien el concepto de Inmon nació en los años 90, los principios del modelado empresarial siguen vigentes en las arquitecturas modernas de datos:
+
+### Data Contracts
+
+Los **contratos de datos** (*data contracts*) son la evolución moderna del glosario corporativo y el modelo empresarial. Definen de forma programática y versionable:
+
+- La estructura de los datos (esquema).
+- Las reglas de calidad (validaciones).
+- El SLA de entrega (frecuencia, latencia).
+- El responsable del dato (data owner).
+
+```yaml
+# Ejemplo de Data Contract moderno (formato YAML)
+dataContract:
+  name: "cliente"
+  version: "2.1.0"
+  owner: "equipo-crm"
+  description: "Entidad de cliente unificada según glosario corporativo"
+  sla:
+    freshness: "daily"
+    availability: "99.9%"
+  schema:
+    - name: id_cliente
+      type: bigint
+      required: true
+      description: "Identificador único del cliente en el EDW"
+    - name: razon_social
+      type: string
+      required: true
+      maxLength: 200
+    - name: tipo_cliente
+      type: enum
+      values: ["persona_fisica", "empresa", "gobierno"]
+      required: true
+    - name: fecha_alta
+      type: date
+      required: true
+  quality:
+    - rule: "no_nulls"
+      columns: [id_cliente, razon_social, tipo_cliente]
+    - rule: "unique"
+      columns: [id_cliente]
+    - rule: "referential_integrity"
+      column: id_segmento
+      references: segmento.id_segmento
+```
+
+### Data Mesh y el Modelado Empresarial
+
+La arquitectura **Data Mesh** (Zhamak Dehghani, 2019) propone que cada dominio de negocio sea responsable de sus propios datos como producto. Esto puede parecer contradictorio con el modelo empresarial centralizado de Inmon, pero en realidad **el modelo empresarial es necesario aun en Data Mesh** para:
+
+- Definir las **interfaces** entre dominios (qué datos comparte cada dominio y en qué formato).
+- Garantizar la **interoperabilidad** entre productos de datos de diferentes dominios.
+- Mantener un **glosario corporativo compartido** que evite las inconsistencias.
+
+La diferencia es que en Data Mesh la **responsabilidad** del modelado se distribuye entre los dominios, pero el **estándar** sigue siendo centralizado. El modelo empresarial de Inmon puede evolucionar hacia una **federación de modelos de dominio** coordinados por una gobernanza central.
+
+---
+
+## Herramientas para el Modelado Empresarial
+
+| Herramienta | Tipo | Uso principal | Licencia |
+|---|---|---|---|
+| **erwin Data Modeler** | Profesional | Modelado ER completo en los 3 niveles | Comercial |
+| **PowerDesigner (SAP)** | Profesional | Modelado conceptual, lógico y físico con generación de DDL | Comercial |
+| **ER/Studio (Idera)** | Profesional | Modelado con repositorio central y versionado | Comercial |
+| **dbdiagram.io** | Web/gratuito | Diagramas ER rápidos con sintaxis DSL | Freemium |
+| **draw.io / diagrams.net** | Web/gratuito | Diagramas genéricos (útil para nivel 1 y 2) | Gratuito |
+| **DBeaver** | Open source | Reverse engineering de bases existentes + diagramas ER | Gratuito / Comercial |
+| **DataGrip (JetBrains)** | Profesional | IDE de base de datos con visualización de esquemas | Comercial |
+| **dbt** | Open source | Definición de modelos como código (lógico → físico) | Gratuito / Cloud |
+
+---
+
+## Ejercicio Práctico: Mini-Modelo Empresarial
+
+**Contexto:** Una universidad necesita un Data Warehouse para analizar la gestión académica. Construir el modelo de alto nivel (nivel 1) y un modelo de mediano nivel (nivel 2) para la entidad ALUMNO.
+
+**Nivel 1 — Modelo conceptual:**
+
+```
+ALUMNO ─────── INSCRIPCIÓN ─────── MATERIA
+   │                │                  │
+   │                │                  │
+CARRERA        CUATRIMESTRE         CÁTEDRA
+   │                                   │
+   │                              DOCENTE
+FACULTAD
+```
+
+**Nivel 2 — Entidad ALUMNO expandida:**
+
+```
+ALUMNO
+───────────────────────────────────────────
+id_alumno                (identificador único)
+legajo                   (código alfanumérico)
+nombre_completo          (nombre + apellido)
+tipo_documento           [DNI | Pasaporte | ...]
+nro_documento
+fecha_nacimiento
+genero                   [M | F | X]
+email_institucional
+email_personal
+fecha_ingreso
+id_carrera (FK)          → CARRERA
+estado                   [Regular | Libre | Graduado | Baja]
+  │
+  ├── HISTORIAL_ACADEMICO
+  │     id_inscripcion, id_materia, nota_final, estado_cursada
+  │
+  └── BECAS_ALUMNO
+        id_beca, tipo_beca, monto, fecha_otorgamiento
+```
+
+**Ejercicio para el estudiante:**
+1. Agregar las entidades DOCENTE, MATERIA y CARRERA con sus atributos principales (nivel 2).
+2. Identificar al menos 4 áreas temáticas del dominio universitario.
+3. Redactar 3 entradas del glosario corporativo (ej: ¿qué es un "alumno regular"? ¿qué es una "materia aprobada"?).
+
+---
+
 ## Lecturas recomendadas
 
 - **Inmon, W.H.** — *Building the Data Warehouse*, 4ta edición. Capítulo 3: "The Corporate Information Factory". Wiley.
 - **Inmon, W.H.** — *Data Architecture: A Primer for the Data Scientist*. Morgan Kaufmann.
 - **DAMA International** — *DAMA-DMBOK: Data Management Body of Knowledge*, Capítulo 8: "Data Modeling and Design".
+- **Dehghani, Z.** — *Data Mesh: Delivering Data-Driven Value at Scale*. O'Reilly Media. (Para la perspectiva moderna de modelado distribuido).
+- **Sadalage, P. & Fowler, M.** — *NoSQL Distilled: A Brief Guide to the Emerging World of Polyglot Persistence*. (Para contrastar con modelado relacional).
+- **Hay, D.C.** — *Data Model Patterns: A Metadata Map*. Morgan Kaufmann. (Patrones reutilizables de modelado empresarial).

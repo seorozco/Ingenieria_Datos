@@ -489,8 +489,266 @@ WHERE vendedor_nk = 'VEND-0015'
 
 ---
 
+## Patrones Avanzados de Modelado Dimensional
+
+Más allá del esquema estrella básico, Kimball identifica patrones recurrentes que resuelven situaciones de diseño comunes.
+
+### Tabla de Hechos sin Hechos (*Factless Fact Table*)
+
+Una tabla de hechos sin métricas numéricas. Registra la **ocurrencia** de un evento, no una medición.
+
+**Ejemplo 1: Cobertura de estudiantes en cursos**
+
+¿Qué alumnos están inscriptos en qué materias en qué cuatrimestre?
+
+```sql
+CREATE TABLE dm_academico.fact_inscripcion (
+    id_tiempo       INTEGER NOT NULL REFERENCES dim_tiempo,
+    id_alumno       INTEGER NOT NULL REFERENCES dim_alumno,
+    id_materia      INTEGER NOT NULL REFERENCES dim_materia,
+    id_cuatrimestre INTEGER NOT NULL REFERENCES dim_cuatrimestre,
+    -- Sin métricas numéricas. La "métrica" es COUNT(*).
+    PRIMARY KEY (id_alumno, id_materia, id_cuatrimestre)
+);
+
+-- Pregunta que responde: ¿Cuántos alumnos hay inscriptos en Álgebra en 2025-1C?
+SELECT COUNT(*)
+FROM dm_academico.fact_inscripcion f
+JOIN dim_materia m ON f.id_materia = m.id_materia
+JOIN dim_cuatrimestre c ON f.id_cuatrimestre = c.id_cuatrimestre
+WHERE m.nombre = 'Álgebra' AND c.periodo = '2025-1C';
+```
+
+**Ejemplo 2: Eventos de cobertura (qué vendedores cubren qué zonas)**
+
+```sql
+-- ¿Qué vendedor NO cubre ninguna zona de la región Patagonia?
+SELECT dv.nombre
+FROM dim_vendedor dv
+WHERE dv.id_vendedor NOT IN (
+    SELECT DISTINCT f.id_vendedor
+    FROM fact_cobertura f
+    JOIN dim_zona dz ON f.id_zona = dz.id_zona
+    WHERE dz.region = 'Patagonia'
+);
+```
+
+---
+
+### Dimensión Basura (*Junk Dimension*)
+
+Cuando hay múltiples flags y atributos de baja cardinalidad que no pertenecen naturalmente a ninguna dimensión, se agrupan en una **dimensión basura** que evita ensuciar la tabla de hechos con columnas sueltas.
+
+```sql
+-- Sin dimensión basura: flags sueltos en la fact
+CREATE TABLE fact_ventas (
+    id_tiempo      INTEGER,
+    id_cliente     INTEGER,
+    -- ... FKs ...
+    es_venta_online   BOOLEAN,      -- flag suelto
+    es_primera_compra BOOLEAN,      -- flag suelto
+    tipo_pago         CHAR(3),      -- cod suelto
+    tiene_descuento   BOOLEAN,      -- flag suelto
+    total_neto        NUMERIC
+);
+
+-- Con dimensión basura: los flags se combinan en una dimensión
+CREATE TABLE dm_ventas.dim_indicadores_venta (
+    id_indicador       SERIAL PRIMARY KEY,
+    es_venta_online    BOOLEAN NOT NULL,
+    es_primera_compra  BOOLEAN NOT NULL,
+    tipo_pago          VARCHAR(20) NOT NULL,
+    tiene_descuento    BOOLEAN NOT NULL
+);
+-- Combinaciones posibles: 2 × 2 × 3 × 2 = 24 filas máximo
+
+CREATE TABLE fact_ventas (
+    id_tiempo      INTEGER,
+    id_cliente     INTEGER,
+    id_indicador   INTEGER REFERENCES dim_indicadores_venta,
+    total_neto     NUMERIC
+);
+```
+
+**Ventaja:** la tabla de hechos queda más limpia y se reduce el ancho de cada fila (ahorro de espacio significativo con millones de filas).
+
+---
+
+### Dimensión Degenerada (*Degenerate Dimension*)
+
+Es un atributo que identifica una transacción pero no justifica tener su propia tabla de dimensión. Se almacena directamente en la tabla de hechos como una columna.
+
+El ejemplo más clásico es el **número de factura**: identifica la transacción, pero no tiene atributos descriptivos propios. No tiene sentido crear una `dim_factura` con una sola columna.
+
+```sql
+CREATE TABLE dm_ventas.fact_ventas (
+    -- ... FKs a dimensiones ...
+    numero_factura  VARCHAR(30) NOT NULL,  -- dimensión degenerada
+    linea           SMALLINT    NOT NULL,  -- dimensión degenerada
+    -- ... métricas ...
+);
+```
+
+---
+
+### Mini-Dimensiones
+
+Cuando una dimensión tiene un subconjunto de atributos que cambian frecuentemente, se puede extraer ese subconjunto a una **mini-dimensión** para evitar que el SCD Tipo 2 genere demasiadas filas.
+
+**Ejemplo:** La dimensión `dim_cliente` tiene atributos estables (nombre, DNI, fecha de nacimiento) y atributos volátiles (segmento, score crediticio, categoría de consumo). En vez de generar una nueva fila SCD2 cada vez que cambia el score:
+
+```sql
+-- Mini-dimensión de perfil dinámico del cliente
+CREATE TABLE dm_ventas.dim_perfil_cliente (
+    id_perfil           SERIAL PRIMARY KEY,
+    rango_edad          VARCHAR(20),     -- '18-25', '26-35', '36-50', '51+'
+    segmento_consumo    VARCHAR(20),     -- 'Bajo', 'Medio', 'Alto', 'Premium'
+    score_crediticio    VARCHAR(20),     -- 'A', 'B', 'C', 'D'
+    frecuencia_compra   VARCHAR(20)      -- 'Esporádico', 'Regular', 'Frecuente'
+);
+-- Todas las combinaciones posibles: 4 × 4 × 4 × 3 = 192 filas
+
+-- La fact table referencia tanto dim_cliente como dim_perfil_cliente
+CREATE TABLE dm_ventas.fact_ventas (
+    id_tiempo          INTEGER NOT NULL,
+    id_cliente         INTEGER NOT NULL REFERENCES dim_cliente,
+    id_perfil_cliente  INTEGER NOT NULL REFERENCES dim_perfil_cliente,
+    -- ...
+);
+```
+
+---
+
+### Esquema Copo de Nieve (*Snowflake Schema*)
+
+El esquema copo de nieve normaliza parcialmente las dimensiones, creando sub-tablas para las jerarquías. Es lo **opuesto** a la recomendación de Kimball.
+
+```
+ESQUEMA ESTRELLA (Kimball recomendado):
+  dim_producto: id_producto | nombre | subcategoria | categoria | departamento
+
+ESQUEMA COPO DE NIEVE (normalizado):
+  dim_producto:      id_producto | nombre | id_subcategoria
+  dim_subcategoria:  id_subcategoria | nombre | id_categoria
+  dim_categoria:     id_categoria | nombre | id_departamento
+  dim_departamento:  id_departamento | nombre
+```
+
+**¿Por qué Kimball NO recomienda el copo de nieve?**
+- Agrega JOINs innecesarios a cada query analítica.
+- Complica el modelo para los usuarios de negocio.
+- El ahorro de espacio es insignificante (las dimensiones son pequeñas).
+- Las herramientas de BI manejan peor los esquemas normalizados.
+
+**¿Cuándo puede tener sentido?** En bases de datos cloud con pricing por bytes escaneados (BigQuery), la normalización de dimensiones muy grandes (millones de filas) puede reducir costos de query. Pero esto es una excepción, no la regla.
+
+---
+
+## Patrones de Tablas de Hechos Especiales
+
+### Tabla de Hechos Periódica (*Periodic Snapshot*)
+
+Captura el estado de un proceso a intervalos regulares. Cada fila = un "corte" en un momento del tiempo.
+
+**Ejemplo: Inventario diario por producto y depósito**
+
+```sql
+CREATE TABLE dm_inventario.fact_inventario_diario (
+    id_tiempo       INTEGER NOT NULL,
+    id_producto     INTEGER NOT NULL,
+    id_deposito     INTEGER NOT NULL,
+    -- Métricas (semi-aditivas: no se suman por tiempo)
+    stock_disponible  INTEGER  NOT NULL,
+    stock_reservado   INTEGER  NOT NULL DEFAULT 0,
+    stock_total       INTEGER  NOT NULL,
+    costo_stock       NUMERIC(14,2),
+    dias_sin_movimiento INTEGER,
+    PRIMARY KEY (id_tiempo, id_producto, id_deposito)
+);
+-- Granularidad: un producto en un depósito en un día.
+-- Se carga un snapshot completo cada noche.
+```
+
+### Tabla de Hechos Acumulada (*Accumulating Snapshot*)
+
+Sigue un proceso de negocio **de principio a fin**, actualizando la misma fila a medida que el proceso avanza.
+
+**Ejemplo: Ciclo de vida de un pedido**
+
+```sql
+CREATE TABLE dm_pedidos.fact_ciclo_pedido (
+    -- Dimensiones de rol (múltiples fechas)
+    id_fecha_pedido       INTEGER REFERENCES dim_tiempo,
+    id_fecha_aprobacion   INTEGER REFERENCES dim_tiempo,
+    id_fecha_preparacion  INTEGER REFERENCES dim_tiempo,
+    id_fecha_envio        INTEGER REFERENCES dim_tiempo,
+    id_fecha_entrega      INTEGER REFERENCES dim_tiempo,
+    -- Otras dimensiones
+    id_cliente            INTEGER NOT NULL,
+    id_producto           INTEGER NOT NULL,
+    numero_pedido         VARCHAR(30) PRIMARY KEY,
+    -- Métricas
+    cantidad              INTEGER NOT NULL,
+    total_pedido          NUMERIC(14,2),
+    -- Métricas de duración (derivadas)
+    dias_aprobacion       INTEGER,  -- fecha_aprobacion - fecha_pedido
+    dias_preparacion      INTEGER,  -- fecha_preparacion - fecha_aprobacion
+    dias_envio            INTEGER,  -- fecha_envio - fecha_preparacion
+    dias_entrega          INTEGER,  -- fecha_entrega - fecha_envio
+    dias_total            INTEGER   -- fecha_entrega - fecha_pedido
+);
+```
+
+A medida que el pedido avanza, el ETL **actualiza** la misma fila llenando las fechas faltantes y recalculando las duraciones.
+
+---
+
+## Ejercicio Práctico: Diseño Dimensional para una Biblioteca
+
+**Contexto:** Una biblioteca universitaria quiere analizar los préstamos de libros para optimizar la compra de nuevos ejemplares.
+
+**Paso 1: Proceso de negocio** → Préstamos de libros
+
+**Paso 2: Granularidad** → Un préstamo de un ejemplar a un socio en una fecha
+
+**Paso 3: Dimensiones:**
+
+| Dimensión | Atributos principales |
+|---|---|
+| `dim_tiempo` | fecha, mes, trimestre, año, es_periodo_examen |
+| `dim_socio` | nombre, carrera, año_cursado, tipo (alumno/docente) |
+| `dim_libro` | titulo, autor, editorial, isbn, tema, año_publicacion |
+| `dim_sucursal` | nombre_biblioteca, campus, horario |
+
+**Paso 4: Hechos:**
+
+```sql
+CREATE TABLE dm_biblioteca.fact_prestamo (
+    id_tiempo_prestamo   INTEGER NOT NULL,
+    id_tiempo_devolucion INTEGER,           -- NULL si no se devolvió aún
+    id_socio             INTEGER NOT NULL,
+    id_libro             INTEGER NOT NULL,
+    id_sucursal          INTEGER NOT NULL,
+    -- Métricas
+    dias_prestamo        INTEGER,           -- devolucion - prestamo
+    es_devolucion_tardia BOOLEAN,           -- > 15 días
+    multa                NUMERIC(8,2) DEFAULT 0,
+    PRIMARY KEY (id_tiempo_prestamo, id_socio, id_libro)
+);
+```
+
+**Preguntas que responde:**
+- ¿Cuáles son los 10 libros más prestados del cuatrimestre?
+- ¿Qué carrera genera más préstamos?
+- ¿Cuál es el porcentaje de devoluciones tardías por sucursal?
+- ¿Qué temas necesitan más ejemplares?
+
+---
+
 ## Lecturas recomendadas
 
 - **Kimball, R. & Ross, M.** — *The Data Warehouse Toolkit*, 3ra edición. Capítulos 2-5. Wiley. (Referencia obligatoria para el modelado dimensional).
 - **Kimball, R.** — *Kimball Design Tips* (serie de artículos técnicos disponibles en kimballgroup.com y archive.org).
 - **Inmon, W.H. & Linstedt, D.** — *Data Architecture: A Primer for the Data Scientist*. Capítulo 6. Academic Press.
+- **Adamson, C.** — *Star Schema: The Complete Reference*. McGraw-Hill. (Referencia exhaustiva sobre patrones de esquema estrella).
+- **Corr, L. & Stagnitto, J.** — *Agile Data Warehouse Design*. DecisionOne Press. (Técnicas de modelado dimensional con metodologías ágiles).

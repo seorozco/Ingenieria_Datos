@@ -352,6 +352,202 @@ ETAPA 5: BI y Despliegue
 
 ---
 
+## 8. Materialización y Vistas Materializadas
+
+Además de las tablas de agregados, los motores modernos ofrecen **vistas materializadas** que automatizan la pre-computación de resultados.
+
+### Vistas Materializadas en PostgreSQL
+
+```sql
+-- Vista materializada: resumen mensual de ventas por región
+CREATE MATERIALIZED VIEW dm_ventas.mv_ventas_mensual_region AS
+SELECT
+    dt.anio,
+    dt.mes_numero,
+    dt.mes_nombre,
+    dc.region,
+    SUM(f.total_neto)    AS total_ventas,
+    SUM(f.margen_bruto)  AS total_margen,
+    COUNT(DISTINCT f.numero_factura) AS num_facturas,
+    COUNT(DISTINCT f.id_cliente)     AS clientes_unicos
+FROM dm_ventas.fact_ventas f
+JOIN dm_ventas.dim_tiempo  dt ON f.id_tiempo  = dt.id_tiempo
+JOIN dm_ventas.dim_cliente dc ON f.id_cliente = dc.id_cliente
+GROUP BY dt.anio, dt.mes_numero, dt.mes_nombre, dc.region
+WITH DATA;
+
+-- Índice sobre la vista materializada
+CREATE INDEX idx_mv_ventas_anio_mes 
+    ON dm_ventas.mv_ventas_mensual_region(anio, mes_numero);
+
+-- Refrescar después de cada carga ETL
+REFRESH MATERIALIZED VIEW CONCURRENTLY dm_ventas.mv_ventas_mensual_region;
+```
+
+**Diferencia entre tabla de agregados y vista materializada:**
+- La tabla de agregados la administra el ETL (la recrea o actualiza explícitamente).
+- La vista materializada la administra el motor de BD (se refresca con un comando).
+- En plataformas cloud (BigQuery, Snowflake), las vistas materializadas se refrescan automáticamente.
+
+### Vistas Materializadas en Snowflake
+
+```sql
+-- Snowflake: la vista materializada se refresca automáticamente
+CREATE MATERIALIZED VIEW dm_ventas.mv_ventas_mensual_region AS
+SELECT
+    DATE_TRUNC('MONTH', dt.fecha) AS mes,
+    dc.region,
+    SUM(f.total_neto)             AS total_ventas,
+    COUNT(*)                      AS num_transacciones
+FROM dm_ventas.fact_ventas f
+JOIN dm_ventas.dim_tiempo  dt ON f.id_tiempo  = dt.id_tiempo
+JOIN dm_ventas.dim_cliente dc ON f.id_cliente = dc.id_cliente
+GROUP BY DATE_TRUNC('MONTH', dt.fecha), dc.region;
+-- Snowflake refresca esta vista de forma incremental y automática.
+```
+
+---
+
+## 9. Compresión de Datos
+
+La compresión es crítica para reducir costos de almacenamiento y mejorar la performance de lectura (menos datos por leer = queries más rápidas).
+
+### Tipos de compresión según plataforma
+
+| Plataforma | Tipo de compresión | Ratio típico | Configuración |
+|---|---|---|---|
+| **PostgreSQL** | TOAST (automática para valores grandes) | 2x-4x | Automática para VARCHAR, TEXT, JSONB |
+| **Redshift** | LZO, ZSTD, Delta, Bytedict | 3x-10x | `ENCODE` por columna: `col1 INTEGER ENCODE zstd` |
+| **BigQuery** | Capacitor (automática, columnar) | 5x-10x | No configurable, siempre activa |
+| **Snowflake** | Micro-particiones comprimidas | 4x-8x | Automática, no configurable |
+
+```sql
+-- Redshift: definir encodings de compresión óptimos
+CREATE TABLE dm_ventas.fact_ventas (
+    id_tiempo      INTEGER ENCODE delta,       -- fechas secuenciales → delta es ideal
+    id_cliente     INTEGER ENCODE zstd,        -- cardinalidad alta → zstd general
+    id_producto    INTEGER ENCODE zstd,
+    id_vendedor    INTEGER ENCODE bytedict,    -- cardinalidad baja → bytedict eficiente
+    numero_factura VARCHAR(30) ENCODE lzo,
+    linea          SMALLINT ENCODE delta,
+    cantidad       NUMERIC(10,3) ENCODE zstd,
+    total_neto     NUMERIC(14,2) ENCODE zstd
+)
+DISTSTYLE KEY DISTKEY(id_cliente)
+SORTKEY(id_tiempo);
+
+-- Para determinar los encodings óptimos automáticamente:
+-- ANALYZE COMPRESSION dm_ventas.fact_ventas;
+```
+
+---
+
+## 10. Monitoreo de Performance
+
+Una vez en producción, el diseño físico debe monitorearse para detectar degradaciones:
+
+### Queries de diagnóstico en PostgreSQL
+
+```sql
+-- Top 10 queries más lentas (requiere pg_stat_statements)
+SELECT
+    LEFT(query, 100) AS query_preview,
+    calls,
+    ROUND(total_exec_time::NUMERIC / 1000, 2) AS total_seg,
+    ROUND(mean_exec_time::NUMERIC / 1000, 2)  AS promedio_seg,
+    rows
+FROM pg_stat_statements
+WHERE query LIKE '%dm_ventas%'
+ORDER BY total_exec_time DESC
+LIMIT 10;
+
+-- Tablas más grandes del Data Mart
+SELECT
+    schemaname || '.' || tablename AS tabla,
+    pg_size_pretty(pg_total_relation_size(schemaname || '.' || tablename)) AS tamanio_total,
+    n_live_tup AS filas_estimadas
+FROM pg_stat_user_tables
+WHERE schemaname = 'dm_ventas'
+ORDER BY pg_total_relation_size(schemaname || '.' || tablename) DESC;
+
+-- Uso de índices (¿se están usando?)
+SELECT
+    schemaname || '.' || relname AS tabla,
+    indexrelname AS indice,
+    idx_scan AS veces_usado,
+    pg_size_pretty(pg_relation_size(indexrelid)) AS tamanio_indice
+FROM pg_stat_user_indexes
+WHERE schemaname = 'dm_ventas'
+ORDER BY idx_scan ASC;
+-- Los índices con idx_scan = 0 no se están usando → candidatos a eliminar
+```
+
+### Plan de revisión periódica
+
+| Frecuencia | Actividad |
+|---|---|
+| **Semanal** | Revisar duración de la carga ETL; si crece, investigar |
+| **Mensual** | Revisar uso de índices; eliminar los que no se usan |
+| **Trimestral** | Revisar sizing y proyectar crecimiento a 12 meses |
+| **Semestral** | Evaluar si las tablas de agregados siguen siendo necesarias |
+| **Anual** | Revisar la arquitectura completa; evaluar migración a nueva plataforma si es necesario |
+
+---
+
+## 11. Diseño Físico en Arquitecturas Lakehouse
+
+Las arquitecturas modernas basadas en **formatos de tabla abiertos** (Delta Lake, Apache Iceberg, Apache Hudi) permiten aplicar principios de diseño físico sobre un data lake:
+
+### Delta Lake (Databricks / open source)
+
+```python
+# Crear una tabla de hechos como Delta Table con Z-Ordering
+from delta.tables import DeltaTable
+
+# Escribir la fact table particionada por año-mes
+(df_ventas
+    .write
+    .format("delta")
+    .mode("overwrite")
+    .partitionBy("anio", "mes")
+    .save("/datalake/dm_ventas/fact_ventas")
+)
+
+# Z-Ordering: ordena los datos dentro de cada partición
+# por las columnas más filtradas (equivalente a sort keys)
+spark.sql("""
+    OPTIMIZE dm_ventas.fact_ventas
+    ZORDER BY (id_cliente, id_producto)
+""")
+```
+
+### Apache Iceberg
+
+```sql
+-- Crear tabla de hechos con Iceberg (en Spark SQL)
+CREATE TABLE dm_ventas.fact_ventas (
+    id_tiempo      INT,
+    id_cliente     BIGINT,
+    id_producto    BIGINT,
+    total_neto     DECIMAL(14,2),
+    fecha          DATE
+)
+USING iceberg
+PARTITIONED BY (months(fecha))  -- partición por mes
+TBLPROPERTIES (
+    'write.distribution-mode' = 'hash',
+    'write.sort-order' = 'id_cliente ASC, id_producto ASC'
+);
+```
+
+**Ventaja de los formatos abiertos:**
+- ACID transactions sobre archivos en un data lake.
+- Time travel (consultar datos como estaban en un momento anterior).
+- Schema evolution (agregar/modificar columnas sin reescribir).
+- Compatibles con múltiples motores (Spark, Trino, DuckDB, etc.).
+
+---
+
 ## Lecturas recomendadas
 
 - **Kimball, R., Ross, M., Thornthwaite, W., Mundy, J. & Becker, B.** — *The Data Warehouse Lifecycle Toolkit*, 2da edición. Capítulo 12: "Physical Design". Wiley.
@@ -359,3 +555,6 @@ ETAPA 5: BI y Despliegue
 - **BigQuery** — *BigQuery best practices: Control costs — Partition and cluster tables*. [cloud.google.com/bigquery](https://cloud.google.com/bigquery/docs/best-practices-costs)
 - **Snowflake** — *Snowflake Documentation: Clustering Keys & Clustered Tables*. [docs.snowflake.com](https://docs.snowflake.com/en/user-guide/tables-clustering-keys)
 - **PostgreSQL** — *PostgreSQL Documentation: Table Partitioning*. [postgresql.org/docs](https://www.postgresql.org/docs/current/ddl-partitioning.html)
+- **Delta Lake** — *Delta Lake Documentation*. [docs.delta.io](https://docs.delta.io/)
+- **Apache Iceberg** — *Apache Iceberg Documentation*. [iceberg.apache.org](https://iceberg.apache.org/docs/latest/)
+- **Kleppmann, M.** — *Designing Data-Intensive Applications*. O'Reilly. Capítulo 3: "Storage and Retrieval".

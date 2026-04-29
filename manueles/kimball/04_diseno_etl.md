@@ -593,9 +593,244 @@ DO UPDATE SET
 
 ---
 
+## ETL Moderno: ELT y la Transformación con dbt
+
+En las arquitecturas modernas cloud, el patrón está evolucionando de **ETL** a **ELT** (Extract, Load, Transform): los datos se extraen y cargan "crudos" al data warehouse, y las transformaciones se ejecutan dentro del motor de BD usando SQL.
+
+### ¿Por qué ELT?
+
+```
+ETL Tradicional:                         ELT Moderno:
+──────────────────                       ──────────────────
+Fuente → [Servidor ETL] → DWH           Fuente → DWH → [Transformar en DWH]
+          ↑                                              ↑
+     La transformación                             La transformación
+     se ejecuta en un                              se ejecuta dentro
+     servidor separado                             del motor cloud
+     (costoso, cuello                              (escalable, usa
+      de botella)                                   toda la potencia
+                                                    del motor columnar)
+```
+
+**Ventajas del ELT:**
+- Aprovecha la potencia del motor cloud (Snowflake, BigQuery, Redshift) para las transformaciones.
+- No requiere un servidor de procesamiento intermedio.
+- Las transformaciones quedan definidas en SQL, que es más fácil de auditar y versionar.
+- Compatibilidad nativa con herramientas como **dbt** (data build tool).
+
+### dbt: Transformaciones como código
+
+**dbt** es la herramienta estándar de la industria para la "T" del ELT. Define transformaciones como modelos SQL versionados en Git:
+
+```sql
+-- models/staging/stg_ventas.sql
+-- Modelo de staging: limpieza y tipado de datos crudos
+{{ config(materialized='view') }}
+
+SELECT
+    factura_id::VARCHAR(30)                    AS numero_factura,
+    linea::SMALLINT                            AS linea,
+    TO_DATE(fecha, 'DD/MM/YYYY')               AS fecha,
+    UPPER(TRIM(cliente_id))                    AS cliente_nk,
+    UPPER(TRIM(producto_id))                   AS producto_nk,
+    REPLACE(cantidad, ',', '.')::NUMERIC(10,3) AS cantidad,
+    REPLACE(precio, ',', '.')::NUMERIC(12,2)   AS precio_unitario,
+    COALESCE(REPLACE(descuento, ',', '.')::NUMERIC(5,4), 0) AS descuento_pct
+FROM {{ source('erp', 'ventas_raw') }}
+WHERE fecha IS NOT NULL
+```
+
+```sql
+-- models/marts/dm_ventas/fact_ventas.sql
+-- Modelo de hechos: unión con dimensiones y cálculo de métricas
+{{ config(
+    materialized='incremental',
+    unique_key=['numero_factura', 'linea'],
+    partition_by={'field': 'fecha', 'data_type': 'date', 'granularity': 'month'}
+) }}
+
+SELECT
+    dt.id_tiempo,
+    dc.id_cliente,
+    dp.id_producto,
+    s.numero_factura,
+    s.linea,
+    s.cantidad,
+    s.precio_unitario,
+    s.descuento_pct,
+    s.cantidad * s.precio_unitario * (1 - s.descuento_pct) AS total_neto
+FROM {{ ref('stg_ventas') }} s
+JOIN {{ ref('dim_tiempo') }}   dt ON s.fecha      = dt.fecha
+JOIN {{ ref('dim_cliente') }}  dc ON s.cliente_nk  = dc.cliente_nk AND dc.is_current = TRUE
+JOIN {{ ref('dim_producto') }} dp ON s.producto_nk = dp.producto_nk AND dp.is_current = TRUE
+
+{% if is_incremental() %}
+WHERE s.fecha > (SELECT MAX(dt2.fecha) FROM {{ this }} f JOIN {{ ref('dim_tiempo') }} dt2 ON f.id_tiempo = dt2.id_tiempo)
+{% endif %}
+```
+
+```yaml
+# models/marts/dm_ventas/schema.yml
+# Tests de calidad integrados en dbt
+version: 2
+models:
+  - name: fact_ventas
+    description: "Tabla de hechos de ventas. Granularidad: línea de factura."
+    columns:
+      - name: numero_factura
+        tests:
+          - not_null
+      - name: id_cliente
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_cliente')
+              field: id_cliente
+      - name: total_neto
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+```
+
+### Comparación: ETL tradicional vs. ELT con dbt
+
+| Aspecto | ETL tradicional (Python/Airflow) | ELT moderno (dbt + Airflow) |
+|---|---|---|
+| **Transformaciones** | Python, pandas, PySpark | SQL dentro del DWH |
+| **Escalabilidad** | Limitada por el servidor ETL | Escalabilidad del motor cloud |
+| **Versionado** | Código en Git (scripts sueltos) | Modelos SQL + tests en Git |
+| **Tests de calidad** | Manuales o con scripts propios | Integrados en dbt (declarativos) |
+| **Documentación** | Manual | Auto-generada por dbt |
+| **Linaje** | Manual | Automático (dbt genera el DAG) |
+| **Ideal para** | Transformaciones complejas (ML, APIs) | Transformaciones SQL estándar |
+
+---
+
+## Testing del ETL: Estrategias de Validación
+
+El ETL debe incluir pruebas automatizadas que se ejecutan en cada carga:
+
+### Tests de integridad referencial
+
+```sql
+-- Verificar que no hay hechos sin dimensión (FK huérfanas)
+SELECT 'fact_ventas → dim_cliente' AS test,
+       COUNT(*) AS filas_huerfanas
+FROM dm_ventas.fact_ventas f
+LEFT JOIN dm_ventas.dim_cliente dc ON f.id_cliente = dc.id_cliente
+WHERE dc.id_cliente IS NULL
+
+UNION ALL
+
+SELECT 'fact_ventas → dim_producto',
+       COUNT(*)
+FROM dm_ventas.fact_ventas f
+LEFT JOIN dm_ventas.dim_producto dp ON f.id_producto = dp.id_producto
+WHERE dp.id_producto IS NULL
+
+UNION ALL
+
+SELECT 'fact_ventas → dim_tiempo',
+       COUNT(*)
+FROM dm_ventas.fact_ventas f
+LEFT JOIN dm_ventas.dim_tiempo dt ON f.id_tiempo = dt.id_tiempo
+WHERE dt.id_tiempo IS NULL;
+-- Resultado esperado: 0 en todas las filas
+```
+
+### Tests de reconciliación (totales DWH vs. fuente)
+
+```sql
+-- Comparar totales del DWH contra el sistema fuente
+-- Esto se ejecuta cada noche después de la carga
+
+WITH dwh AS (
+    SELECT SUM(total_neto) AS total_dwh,
+           COUNT(DISTINCT numero_factura) AS facturas_dwh
+    FROM dm_ventas.fact_ventas
+    WHERE id_tiempo BETWEEN 20250401 AND 20250430
+),
+fuente AS (
+    SELECT SUM(total_neto) AS total_fuente,
+           COUNT(DISTINCT numero_factura) AS facturas_fuente
+    FROM erp_replica.ventas
+    WHERE fecha BETWEEN '2025-04-01' AND '2025-04-30'
+)
+SELECT
+    dwh.total_dwh,
+    fuente.total_fuente,
+    ABS(dwh.total_dwh - fuente.total_fuente) AS diferencia_absoluta,
+    ROUND(100.0 * ABS(dwh.total_dwh - fuente.total_fuente) / fuente.total_fuente, 4) AS diferencia_pct,
+    CASE WHEN ABS(dwh.total_dwh - fuente.total_fuente) < 0.01
+         THEN 'OK' ELSE 'ALERTA' END AS estado
+FROM dwh, fuente;
+```
+
+### Tests de unicidad y completitud
+
+```sql
+-- Verificar que no hay duplicados en la fact table
+SELECT numero_factura, linea, COUNT(*) AS duplicados
+FROM dm_ventas.fact_ventas
+GROUP BY numero_factura, linea
+HAVING COUNT(*) > 1;
+-- Resultado esperado: 0 filas
+
+-- Verificar que no hay huecos en dim_tiempo
+SELECT
+    COUNT(*) AS dias_existentes,
+    (MAX(fecha) - MIN(fecha) + 1) AS dias_esperados,
+    CASE WHEN COUNT(*) = (MAX(fecha) - MIN(fecha) + 1)
+         THEN 'OK' ELSE 'HUECOS DETECTADOS' END AS estado
+FROM dm_ventas.dim_tiempo;
+```
+
+---
+
+## Patrones de Carga: Late-Arriving Facts y Dimensions
+
+### Late-Arriving Facts (Hechos tardíos)
+
+Cuando una transacción llega al sistema fuente con fecha anterior a la última carga. Ejemplo: una factura del 15/03 se registra en el ERP el 18/03, pero el ETL ya procesó hasta el 17/03.
+
+**Solución:** El ETL incremental debe mirar un "ventana de seguridad" más amplia que solo el día anterior:
+
+```sql
+-- En vez de extraer solo fecha > ultima_carga,
+-- extraer con un margen de seguridad de 3 días
+WHERE fecha_modificacion > (ultima_carga - INTERVAL '3 days')
+```
+
+Combinado con UPSERT, los registros que ya existen se actualizan y los nuevos se insertan.
+
+### Late-Arriving Dimensions (Dimensiones tardías)
+
+Cuando llega un hecho que referencia una dimensión que aún no existe en el DWH. Ejemplo: se registra una venta del cliente "CLI-9999" pero ese cliente aún no se cargó en `dim_cliente`.
+
+**Solución de Kimball:** Insertar un registro "placeholder" en la dimensión con datos mínimos y una marca de "inferido":
+
+```sql
+INSERT INTO dm_ventas.dim_cliente (cliente_nk, razon_social, segmento, ciudad, is_current, is_inferred)
+VALUES ('CLI-9999', 'PENDIENTE DE CARGA', 'Desconocido', 'Desconocida', TRUE, TRUE);
+
+-- Cuando el ETL cargue los datos reales del cliente, actualiza el placeholder:
+UPDATE dm_ventas.dim_cliente
+SET razon_social = 'García e Hijos S.A.',
+    segmento     = 'Premium',
+    ciudad       = 'Córdoba',
+    is_inferred  = FALSE
+WHERE cliente_nk = 'CLI-9999' AND is_inferred = TRUE;
+```
+
+---
+
 ## Lecturas recomendadas
 
 - **Kimball, R. & Caserta, J.** — *The Data Warehouse ETL Toolkit*. Wiley. (El libro más completo sobre ETL con la metodología Kimball. Describe los 34 subsistemas en detalle.)
 - **Apache Airflow** — Documentación oficial: [airflow.apache.org](https://airflow.apache.org/docs/)
 - **dbt (data build tool)** — Para transformaciones ETL modernas con SQL versionado: [docs.getdbt.com](https://docs.getdbt.com)
+- **Debezium** — CDC open source: [debezium.io](https://debezium.io/documentation/)
+- **Reis, J. & Housley, M.** — *Fundamentals of Data Engineering*. O'Reilly. Capítulos 7-8. (Perspectiva moderna de ingesta y transformación).
+- **Maxime Beauchemin** — Creador de Apache Airflow. Blog: [medium.com/@maximebeauchemin](https://medium.com/@maximebeauchemin) (Artículos sobre orquestación y mejores prácticas de ETL).
 - **Debezium** — Para CDC (Change Data Capture): [debezium.io](https://debezium.io/documentation/)
