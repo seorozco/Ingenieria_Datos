@@ -10,7 +10,7 @@
 
 Al finalizar esta clase, el alumno será capaz de:
 
-- Explicar y aplicar las tres estrategias de carga: **Full Overwrite**, **Append** y **Upsert**.
+- Explicar y diferenciar las cinco estrategias de carga: **Full Overwrite**, **Append**, **Upsert**, **Incremental Delta** y **CDC**.
 - Implementar la carga a bases de datos PostgreSQL con `SQLAlchemy` y `pandas`.
 - Guardar datos en formatos de Data Lake (Parquet, CSV particionado).
 - Entender el concepto de **idempotencia** en pipelines de datos.
@@ -122,6 +122,97 @@ Estado posterior: [fila1{v1}, fila2{v2}, fila3{v1}, fila4{nuevo}]
 - Dimensiones que cambian (clientes que actualizan su dirección).
 - Datos que pueden llegar repetidos desde la fuente.
 - Pipelines que necesitan ser re-ejecutables sin consecuencias.
+
+### 2.4 Incremental Delta (Carga por Marca de Tiempo)
+
+Se consulta la fuente usando una **marca de tiempo o un ID secuencial** como punto de corte (watermark): solo se extraen y cargan los registros **creados o modificados desde la última ejecución exitosa**.
+
+```
+Última ejecución exitosa: 2025-03-01 06:00:00
+
+Estado en la fuente:
+  [fila1 updated_at=2025-02-10]  ← ya fue procesada, se ignora
+  [fila2 updated_at=2025-02-28]  ← ya fue procesada, se ignora
+  [fila3 updated_at=2025-03-02]  ← nueva → se procesa ✅
+  [fila4 updated_at=2025-03-03]  ← nueva → se procesa ✅
+
+El nuevo watermark queda en: 2025-03-03 (fecha del último registro procesado)
+```
+
+**Mecanismo de watermark:**
+El pipeline guarda en una tabla de control (o archivo de estado) el timestamp de la última ejecución exitosa. En la siguiente ejecución, usa ese valor para filtrar la consulta a la fuente.
+
+```sql
+-- Consulta incremental usando watermark
+SELECT *
+FROM ventas_operativas
+WHERE updated_at > '2025-03-01 06:00:00'  -- ← watermark de la última ejecución
+ORDER BY updated_at;
+```
+
+**¿Cuándo usarlo?**
+- Tablas muy grandes donde el Full Overwrite sería costoso o lento.
+- Fuentes que exponen una columna `updated_at`, `modified_date` o `id` secuencial confiable.
+- Pipelines batch que corren cada hora o cada día sobre datos que cambian parcialmente.
+
+**Riesgo:** Depende de que la columna de referencia sea confiable. Si un registro se modifica sin actualizar el `updated_at`, el cambio queda invisible para el pipeline.
+
+### 2.5 CDC — Change Data Capture (Captura de Cambios en el Origen)
+
+CDC es una técnica que **captura los cambios directamente desde los logs internos del motor de base de datos** (binary log en MySQL, WAL en PostgreSQL, redo log en Oracle). En lugar de consultar los datos, se intercepta el flujo de operaciones INSERT, UPDATE y DELETE a medida que ocurren.
+
+```
+Motor de base de datos (fuente):
+  → INSERT fila5   ──►  log de cambios  ──►  pipeline CDC  ──►  destino
+  → UPDATE fila2   ──►  log de cambios  ──►  pipeline CDC  ──►  destino
+  → DELETE fila1   ──►  log de cambios  ──►  pipeline CDC  ──►  destino
+
+No se consultan los datos directamente. Se "escucha" el flujo de cambios.
+```
+
+**Herramientas comunes de CDC:**
+- **Debezium** (open source, sobre Kafka): captura cambios de PostgreSQL, MySQL, SQL Server, Oracle y los publica como eventos en topics de Kafka.
+- **AWS DMS** (Database Migration Service): servicio administrado de CDC en la nube.
+- **Fivetran / Airbyte**: plataformas de integración que implementan CDC como conector.
+
+**¿Cuándo usarlo?**
+- Cuando se necesita replicación **casi en tiempo real** (latencia de segundos).
+- Fuentes de alta frecuencia de cambio donde el polling periódico genera demasiada carga.
+- Cuando se necesita capturar **deletes** (imposible con Incremental Delta por watermark).
+- Arquitecturas event-driven o streaming (pipelines sobre Kafka, Flink, Spark Streaming).
+
+**Riesgo:** Requiere configuración a nivel del motor de base de datos (habilitar WAL/binlog), infraestructura adicional (broker de mensajes) y mayor complejidad operativa.
+
+---
+
+## 2.6 Tabla Comparativa de Estrategias de Carga
+
+| Estrategia | Qué hace | Volumen de datos transferido | Detecta DELETEs | Idempotente | Complejidad | Casos de uso típicos |
+|---|---|---|---|---|---|---|
+| **Full Overwrite** | Borra todo y recarga completo | 100% de la tabla siempre | ✅ Sí (la tabla queda exacta) | ✅ Sí (con transacción) | Baja | Dimensiones pequeñas, catálogos, tablas de referencia |
+| **Append** | Solo inserta registros nuevos | Solo registros nuevos | ❌ No | ⚠️ Solo con control de IDs | Baja | Logs, eventos, auditoría, telemetría inmutable |
+| **Upsert / Merge** | Inserta si no existe, actualiza si existe | Solo registros nuevos o modificados | ❌ No | ✅ Sí (por naturaleza) | Media | Dimensiones que cambian, datos que pueden llegar duplicados |
+| **Incremental Delta** | Carga solo lo modificado desde el último watermark | Solo registros nuevos o modificados | ❌ No | ⚠️ Depende del watermark | Media | Tablas grandes con columna `updated_at` confiable |
+| **CDC** | Captura INSERT/UPDATE/DELETE desde el log del motor | Solo eventos de cambio (flujo continuo) | ✅ Sí | ✅ Sí (con broker) | Alta | Replicación en tiempo real, arquitecturas event-driven |
+
+### Guía rápida de decisión
+
+```
+¿La tabla es pequeña (< 1 millón de filas) o estática?
+  └─► Full Overwrite
+
+¿Los registros nunca se modifican una vez creados (logs, eventos)?
+  └─► Append
+
+¿Los registros pueden cambiar y necesitás que el pipeline sea robusto?
+  └─► Upsert
+
+¿La tabla es muy grande y la fuente tiene un campo updated_at confiable?
+  └─► Incremental Delta
+
+¿Necesitás replicación casi en tiempo real o capturar deletes?
+  └─► CDC
+```
 
 ---
 
@@ -488,9 +579,11 @@ Ejemplos:
 │  └─────────────────────────────────────────────────────────────────┘   │
 │                                                                          │
 │  ESTRATEGIAS DE CARGA:                                                  │
-│  Full Overwrite → catálogos y dimensiones estáticas                     │
-│  Append         → eventos y logs inmutables                             │
-│  Upsert         → datos que pueden cambiar (clientes, productos)        │
+│  Full Overwrite    → catálogos y dimensiones estáticas                  │
+│  Append            → eventos y logs inmutables                          │
+│  Upsert            → datos que pueden cambiar (clientes, productos)     │
+│  Incremental Delta → tablas grandes con updated_at confiable            │
+│  CDC               → replicación en tiempo real, captura deletes        │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -503,7 +596,9 @@ Ejemplos:
 | **Idempotencia** | Un pipeline que se puede re-ejecutar N veces con el mismo resultado |
 | **Full Overwrite** | Borrar y recargar completo; ideal para tablas pequeñas o estáticas |
 | **Append** | Agregar solo registros nuevos; ideal para eventos inmutables |
-| **Upsert** | Actualizar si existe, insertar si no; la estrategia más robusta |
+| **Upsert / Merge** | Actualizar si existe, insertar si no; la estrategia más robusta |
+| **Incremental Delta** | Cargar solo lo modificado desde el último watermark; ideal para tablas grandes |
+| **CDC** | Captura INSERT/UPDATE/DELETE desde el log del motor; para tiempo real y deletes |
 | **Apache Airflow** | Orquestador de pipelines: scheduling, dependencias, monitoreo |
 | **DAG** | El "plano" del pipeline: define tareas y su orden de ejecución |
 | **Parquet particionado** | Formato columnar organizado por fecha para Data Lakes eficientes |
