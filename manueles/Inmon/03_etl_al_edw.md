@@ -282,6 +282,288 @@ El campo `ultimo_valor_marca` guarda el "punto de corte" de la última extracci�
 
 ---
 
+## ELT vs. ETL: El Debate Moderno en el Contexto Inmon
+
+En la arquitectura original de Inmon (años 90-2000), la transformación ocurría **fuera** del data warehouse, en un servidor ETL dedicado. Con la llegada de motores cloud de alto rendimiento, el paradigma está cambiando a **ELT**: cargar primero y transformar dentro del motor.
+
+### ¿Se puede aplicar ELT en la arquitectura Inmon?
+
+Sí, pero con matices. El principio Inmon de integración y normalización no cambia; lo que cambia es **dónde** se ejecuta la lógica de transformación.
+
+```
+ETL clásico (Inmon original):
+  Fuente → [Servidor ETL externo] → Staging → [Servidor ETL] → EDW (3FN)
+  La transformación consume recursos del servidor ETL.
+
+ELT moderno (Inmon + Cloud):
+  Fuente → [Ingesta directa] → Staging (en el DWH) → [SQL/dbt dentro del DWH] → EDW (3FN)
+  La transformación consume recursos del motor cloud (Snowflake, BigQuery, etc.).
+```
+
+### Implementación con dbt para el EDW Inmon
+
+```sql
+-- models/staging/stg_erp__clientes.sql
+-- Modelo de staging: limpieza y tipado desde la capa raw
+{{ config(materialized='view') }}
+
+SELECT
+    CAST(id_cliente AS BIGINT)           AS cliente_src_key,
+    UPPER(TRIM(razon_social))            AS razon_social,
+    CASE tipo_cliente
+        WHEN 'PF' THEN 'F'
+        WHEN 'PE' THEN 'E'
+        WHEN 'PG' THEN 'G'
+        ELSE 'F'
+    END                                  AS tipo_cliente,
+    CAST(id_ciudad AS INTEGER)           AS id_ciudad,
+    CAST(id_segmento AS SMALLINT)        AS id_segmento,
+    CASE WHEN activo = 1 THEN 'A' ELSE 'I' END AS estado,
+    CAST(fecha_modificacion AS TIMESTAMP) AS fecha_modificacion,
+    'ERP' AS sistema_fuente
+FROM {{ source('raw', 'erp_clientes') }}
+WHERE id_cliente IS NOT NULL
+```
+
+```sql
+-- models/edw/edw__cliente.sql
+-- Modelo del EDW: integración con SCD Tipo 2
+{{ config(
+    materialized='incremental',
+    unique_key='cliente_src_key',
+    strategy='timestamp',
+    updated_at='fecha_modificacion'
+) }}
+
+WITH fuentes_unificadas AS (
+    SELECT * FROM {{ ref('stg_erp__clientes') }}
+    UNION ALL
+    SELECT * FROM {{ ref('stg_crm__clientes') }}
+),
+priorizada AS (
+    -- Regla de integración: ERP prevalece sobre CRM para razon_social
+    SELECT *,
+        ROW_NUMBER() OVER (
+            PARTITION BY cliente_src_key
+            ORDER BY CASE sistema_fuente WHEN 'ERP' THEN 1 ELSE 2 END
+        ) AS prioridad
+    FROM fuentes_unificadas
+)
+SELECT
+    cliente_src_key,
+    razon_social,
+    tipo_cliente,
+    id_ciudad,
+    id_segmento,
+    estado,
+    CURRENT_DATE AS fecha_efectiva,
+    '9999-12-31'::DATE AS fecha_vencimiento,
+    TRUE AS es_vigente,
+    {{ dbt_utils.generate_surrogate_key(['cliente_src_key', 'razon_social', 'tipo_cliente', 'id_ciudad']) }} AS hash_registro
+FROM priorizada
+WHERE prioridad = 1
+
+{% if is_incremental() %}
+    AND fecha_modificacion > (SELECT MAX(fecha_efectiva) FROM {{ this }})
+{% endif %}
+```
+
+---
+
+## Orquestación del ETL: Pipelines Completos
+
+El ETL de Inmon involucra muchas más dependencias que el de Kimball (porque carga un EDW completo, no un solo Data Mart). La orquestación debe manejar:
+
+1. **Orden de carga por dependencias de FK** (tablas maestras antes que transaccionales).
+2. **Paralelismo donde sea posible** (fuentes independientes se extraen en paralelo).
+3. **Checkpoints de consistencia** entre etapas.
+
+### DAG de Airflow para el EDW completo
+
+```python
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+from airflow.operators.bash import BashOperator
+from airflow.utils.task_group import TaskGroup
+from datetime import datetime, timedelta
+
+default_args = {
+    'owner': 'equipo-datos',
+    'retries': 3,
+    'retry_delay': timedelta(minutes=5),
+    'email_on_failure': True,
+    'email': ['datos@empresa.com'],
+}
+
+with DAG(
+    dag_id='etl_edw_inmon_completo',
+    description='ETL nocturno: fuentes → staging → EDW → data marts',
+    schedule_interval='0 22 * * *',  # 22:00 UTC
+    start_date=datetime(2025, 1, 1),
+    catchup=False,
+    default_args=default_args,
+    tags=['edw', 'inmon'],
+) as dag:
+
+    # ═══════════════════════════════════════════════════
+    # FASE 1: EXTRACCIÓN (paralela por sistema fuente)
+    # ═══════════════════════════════════════════════════
+    with TaskGroup('extraccion') as grupo_extraccion:
+        ext_erp = PythonOperator(
+            task_id='extraer_erp',
+            python_callable=extraer_incremental_erp,
+        )
+        ext_crm = PythonOperator(
+            task_id='extraer_crm',
+            python_callable=extraer_completo_crm,
+        )
+        ext_archivos = PythonOperator(
+            task_id='extraer_archivos_csv',
+            python_callable=extraer_archivos_planos,
+        )
+        # Se ejecutan en paralelo (sin dependencia entre ellas)
+
+    # ═══════════════════════════════════════════════════
+    # FASE 2: TRANSFORMACIÓN Y CARGA AL EDW
+    # ═══════════════════════════════════════════════════
+    with TaskGroup('carga_edw') as grupo_edw:
+        # Nivel 1: Tablas maestras sin dependencias
+        carga_pais = PythonOperator(task_id='edw_pais', python_callable=cargar_edw_pais)
+        carga_tipo_cli = PythonOperator(task_id='edw_tipo_cliente', python_callable=cargar_edw_tipo_cliente)
+        carga_segmento = PythonOperator(task_id='edw_segmento', python_callable=cargar_edw_segmento)
+
+        # Nivel 2: Dependen del nivel 1
+        carga_provincia = PythonOperator(task_id='edw_provincia', python_callable=cargar_edw_provincia)
+        carga_categoria = PythonOperator(task_id='edw_categoria', python_callable=cargar_edw_categoria)
+
+        # Nivel 3: Dependen del nivel 2
+        carga_ciudad = PythonOperator(task_id='edw_ciudad', python_callable=cargar_edw_ciudad)
+        carga_producto = PythonOperator(task_id='edw_producto', python_callable=cargar_edw_producto)
+
+        # Nivel 4: Dependen de todo lo anterior
+        carga_cliente = PythonOperator(task_id='edw_cliente', python_callable=cargar_edw_cliente)
+
+        # Nivel 5: Transaccionales
+        carga_pedido = PythonOperator(task_id='edw_pedido', python_callable=cargar_edw_pedido)
+        carga_linea = PythonOperator(task_id='edw_linea_pedido', python_callable=cargar_edw_linea)
+
+        # Dependencias internas
+        [carga_pais] >> carga_provincia >> carga_ciudad
+        [carga_tipo_cli, carga_segmento, carga_ciudad] >> carga_cliente
+        carga_categoria >> carga_producto
+        [carga_cliente, carga_producto] >> carga_pedido >> carga_linea
+
+    # ═══════════════════════════════════════════════════
+    # FASE 3: DERIVACIÓN DE DATA MARTS
+    # ═══════════════════════════════════════════════════
+    with TaskGroup('derivacion_data_marts') as grupo_dm:
+        dm_ventas = BashOperator(
+            task_id='derivar_dm_ventas',
+            bash_command='dbt run --select dm_ventas --target prod',
+        )
+        dm_finanzas = BashOperator(
+            task_id='derivar_dm_finanzas',
+            bash_command='dbt run --select dm_finanzas --target prod',
+        )
+
+    # ═══════════════════════════════════════════════════
+    # FASE 4: VALIDACIÓN
+    # ═══════════════════════════════════════════════════
+    validacion = BashOperator(
+        task_id='tests_consistencia',
+        bash_command='dbt test --target prod',
+    )
+
+    # Flujo principal
+    grupo_extraccion >> grupo_edw >> grupo_dm >> validacion
+```
+
+---
+
+## La Carga Inicial (*Initial Load*): El Primer Gran Desafío
+
+La carga inicial es el proceso de cargar por primera vez todo el historial disponible en los sistemas fuente al EDW. Es cualitativamente distinta a la carga incremental diaria:
+
+### Diferencias entre carga inicial e incremental
+
+| Aspecto | Carga Inicial | Carga Incremental |
+|---|---|---|
+| **Volumen** | Todo el historial (años) | Solo cambios del período |
+| **Duración** | Horas a días | Minutos a horas |
+| **Frecuencia** | Una sola vez | Diaria/horaria |
+| **Detección de cambios** | No aplica (todo es nuevo) | Timestamp, CDC, hash |
+| **Riesgo** | Alto (si falla, se pierde mucho tiempo) | Medio (se puede reintentar) |
+| **Validación** | Exhaustiva (comparar totales completos) | Diferencial (solo lo nuevo) |
+
+### Estrategia de carga inicial por fases
+
+```
+Fase 1 — Tablas de referencia (catálogos)
+  Volumen: pequeño (miles de registros)
+  Tiempo: minutos
+  Validación: COUNT(*) y muestreo manual
+
+Fase 2 — Tablas maestras (clientes, productos, vendedores)
+  Volumen: medio (decenas de miles a millones)
+  Tiempo: minutos a horas
+  Validación: COUNT(*), SUM de campos numéricos, claves huérfanas
+
+Fase 3 — Tablas transaccionales (pedidos, facturas, movimientos)
+  Volumen: alto (millones a miles de millones)
+  Tiempo: horas a días
+  Estrategia: cargar por períodos (año por año o mes por mes)
+  Validación: totales por mes/año contra el sistema fuente
+
+Fase 4 — Derivación inicial de Data Marts
+  Precondición: EDW completamente cargado y validado
+  Tiempo: horas
+  Validación: cruce de totales EDW vs. Data Mart
+```
+
+---
+
+## Monitoreo y Observabilidad del ETL
+
+Un ETL en producción necesita observabilidad para detectar problemas antes de que los usuarios los reporten.
+
+### Métricas clave a monitorear
+
+| Métrica | Umbral de alerta | Acción |
+|---|---|---|
+| **Duración del ETL** | > 150% del promedio histórico | Investigar cuello de botella |
+| **Filas rechazadas** | > 1% del total extraído | Notificar al Data Steward |
+| **Filas cargadas = 0** | Siempre | Alerta crítica: posible fallo de extracción |
+| **Diferencia EDW vs. fuente** | > 0.01% | Investigar pérdida de datos |
+| **Espacio en disco** | > 80% capacidad | Planificar expansión o archivado |
+| **Ventana de carga excedida** | ETL no terminó antes del SLA | Alerta al equipo + plan de contingencia |
+
+### Dashboard operativo del ETL
+
+```sql
+-- Vista para el dashboard operativo del ETL
+CREATE VIEW meta.v_estado_etl AS
+SELECT
+    e.nombre_proceso,
+    e.fecha_inicio::DATE AS fecha,
+    e.estado,
+    EXTRACT(EPOCH FROM (e.fecha_fin - e.fecha_inicio)) / 60 AS duracion_min,
+    e.filas_extraidas,
+    e.filas_cargadas,
+    e.filas_rechazadas,
+    ROUND(100.0 * e.filas_rechazadas / NULLIF(e.filas_extraidas, 0), 2) AS pct_rechazo,
+    CASE
+        WHEN e.estado = 'FALLIDO' THEN '🔴 FALLO'
+        WHEN e.filas_rechazadas > e.filas_extraidas * 0.01 THEN '🟡 RECHAZO ALTO'
+        WHEN EXTRACT(EPOCH FROM (e.fecha_fin - e.fecha_inicio)) / 60 > 120 THEN '🟡 LENTO'
+        ELSE '🟢 OK'
+    END AS semaforo
+FROM meta.control_carga e
+WHERE e.fecha_inicio >= CURRENT_DATE - INTERVAL '30 days'
+ORDER BY e.fecha_inicio DESC;
+```
+
+---
+
 ## Entregables de la Etapa 3
 
 1. ✅ **Diseño detallado del flujo ETL** por cada entidad y sistema fuente.
@@ -322,3 +604,6 @@ ETAPA 4: Data Marts (derivación desde el EDW)
 - **Reis, J. & Housley, M.** — *Fundamentals of Data Engineering*, Capítulo 8. O'Reilly Media.
 - **Documentación de Apache Airflow** — [airflow.apache.org](https://airflow.apache.org/docs/) (orquestación de pipelines ETL).
 - **Documentación de Debezium** — [debezium.io](https://debezium.io/documentation/) (Change Data Capture).
+- **dbt Labs** — Documentación oficial de dbt: [docs.getdbt.com](https://docs.getdbt.com) (transformaciones ELT modernas).
+- **Kleppmann, M.** — *Designing Data-Intensive Applications*. O'Reilly. Capítulos 10-11: "Batch Processing" y "Stream Processing".
+- **Narayan, A. et al.** — *Fundamentals of Data Observability*. O'Reilly. (Monitoreo y calidad de pipelines de datos).

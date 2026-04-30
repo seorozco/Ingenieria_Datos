@@ -272,6 +272,210 @@ En organizaciones maduras, la capa de acceso analítico está soportada por un *
 
 ---
 
+## Data Storytelling: Del Dato a la Narrativa
+
+La capa de acceso analítico no es solo tecnología: es la interfaz entre los datos y las **decisiones humanas**. Los datos crudos, incluso bien visualizados, no generan acción si no están acompañados de una narrativa.
+
+### Los tres pilares del Data Storytelling
+
+```
+        DATOS                VISUALIZACIÓN            NARRATIVA
+     (precisión)            (comprensión)             (acción)
+         │                       │                       │
+         └───────────────────────┼───────────────────────┘
+                                 │
+                          DATA STORYTELLING
+                         (decisión informada)
+```
+
+**Ejemplo práctico:**
+
+❌ **Solo datos:** "Las ventas de marzo fueron $4.523.810."
+→ El receptor no sabe si es bueno o malo.
+
+❌ **Datos + visualización:** Un gráfico de barras que muestra $4.523.810 en marzo.
+→ El receptor ve el número pero no entiende el contexto.
+
+✅ **Datos + visualización + narrativa:**
+"Las ventas de marzo cayeron un 12% respecto al mismo mes del año anterior ($5.140.000 → $4.523.810). La caída se concentra en la región Patagonia (-28%) debido al cierre temporal de 3 sucursales por obras de remodelación. Se espera la recuperación en mayo cuando reabran. Las otras regiones crecieron un promedio de 4%."
+→ El receptor entiende qué pasó, por qué y qué esperar.
+
+### Principios de visualización de datos (Stephen Few)
+
+| Principio | Descripción | Ejemplo |
+|---|---|---|
+| **Contexto** | Todo número necesita un punto de comparación | Mostrar ventas actuales vs. meta y vs. año anterior |
+| **Proporcionalidad** | Los elementos visuales deben ser proporcionales a los datos | No cortar el eje Y para exagerar diferencias |
+| **Simplicidad** | Eliminar todo lo que no contribuye al mensaje | Sin efectos 3D, sin fondos decorativos, sin gridlines innecesarios |
+| **Jerarquía** | Lo más importante primero y más prominente | KPIs grandes arriba; detalle abajo |
+| **Consistencia** | Mismos colores, formatos y convenciones en todos los reportes | Rojo = malo, Verde = bueno; siempre el mismo formato de moneda |
+
+---
+
+## Patrones de Visualización para cada tipo de análisis
+
+### Selección del gráfico correcto
+
+| Pregunta analítica | Tipo de gráfico recomendado | Ejemplo |
+|---|---|---|
+| ¿Cómo cambia algo en el tiempo? | **Línea** | Evolución mensual de ventas |
+| ¿Cómo se comparan categorías? | **Barras horizontales** | Ventas por región |
+| ¿Cuál es la composición? | **Barras apiladas** o **Treemap** | Ventas por categoría de producto |
+| ¿Cuál es la distribución? | **Histograma** o **Box plot** | Distribución del ticket promedio |
+| ¿Cuál es la correlación? | **Scatter plot** | Descuento vs. margen |
+| ¿Cuál es el estado actual? | **KPI cards** con semáforo | Cumplimiento de meta: 87% 🟡 |
+| ¿Dónde está concentrado? | **Mapa de calor geográfico** | Ventas por provincia |
+| ¿Cuál es el ranking? | **Barras ordenadas** | Top 10 clientes |
+
+### Ejemplo de Dashboard bien diseñado
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  DASHBOARD DE PERFORMANCE DE VENTAS — Marzo 2025                   │
+│  Actualización: diaria (última carga: 01/04/2025 06:15 AM)        │
+├──────────────────┬──────────────────┬──────────────────────────────┤
+│  Ventas del Mes  │  Meta del Mes    │  Margen Bruto               │
+│  $4.523.810      │  $5.200.000      │  22.4%                      │
+│  ▼ 12% vs AA     │  87% cumplim.    │  ▲ 1.2pp vs mes anterior    │
+│  🔴              │  🟡              │  🟢                         │
+├──────────────────┴──────────────────┴──────────────────────────────┤
+│  TENDENCIA DE VENTAS (últimos 12 meses)                           │
+│  ──────────────────────────────────────                           │
+│  [Gráfico de línea: ventas mensuales con línea de meta punteada]  │
+│  Insight: la tendencia es descendente desde noviembre 2024.       │
+├──────────────────────────────────┬────────────────────────────────┤
+│  VENTAS POR REGIÓN               │  TOP 5 VENDEDORES DEL MES     │
+│  ─────────────────               │  ────────────────────────      │
+│  Centro    ██████████ $2.1M      │  1. López, J.    $412K  (103%)│
+│  Patagonia ███       $0.5M  ▼28% │  2. Gómez, M.    $389K  (97%) │
+│  Noreste   ████      $0.8M       │  3. Rodríguez, A. $356K (89%) │
+│  Cuyo      █████     $1.1M       │  4. Fernández, C. $341K (85%) │
+│                                   │  5. Martínez, R.  $298K (74%) │
+├──────────────────────────────────┴────────────────────────────────┤
+│  Filtros: [Período ▾] [Región ▾] [Categoría ▾] [Canal ▾]         │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Integración con Machine Learning
+
+La capa de acceso analítico moderna no se limita a reportes descriptivos. El Data Warehouse alimenta modelos de ML que generan análisis predictivo y prescriptivo.
+
+### Flujo de integración DWH → ML
+
+```
+Data Mart (dm_ventas)
+        │
+        │ Feature Engineering
+        │ (crear variables para el modelo)
+        ▼
+┌─────────────────────────┐
+│  Dataset de entrenamiento│
+│  (extraído del DM via   │
+│   SQL o dbt)            │
+└────────────┬────────────┘
+             │
+             ▼
+┌─────────────────────────┐
+│  Modelo ML              │
+│  (scikit-learn, XGBoost,│
+│   Prophet, etc.)        │
+└────────────┬────────────┘
+             │
+             ▼
+┌─────────────────────────┐
+│  Predicciones           │
+│  (se escriben de vuelta │
+│   al DWH o al DM)      │
+└────────────┬────────────┘
+             │
+             ▼
+┌─────────────────────────┐
+│  Dashboard con           │
+│  predicciones integradas │
+│  (Power BI, Tableau)     │
+└─────────────────────────┘
+```
+
+### Ejemplo: predicción de demanda
+
+```python
+import pandas as pd
+from prophet import Prophet
+from sqlalchemy import create_engine
+
+engine = create_engine('postgresql://...')
+
+# Extraer datos históricos del Data Mart
+df = pd.read_sql("""
+    SELECT
+        t.fecha AS ds,
+        SUM(f.cantidad) AS y
+    FROM dm_ventas.fact_ventas f
+    JOIN dm_ventas.dim_tiempo t ON f.id_tiempo = t.id_tiempo
+    JOIN dm_ventas.dim_producto p ON f.id_producto = p.id_producto
+    WHERE p.categoria = 'Electrónica'
+    GROUP BY t.fecha
+    ORDER BY t.fecha
+""", engine)
+
+# Entrenar modelo de series de tiempo
+modelo = Prophet(yearly_seasonality=True, weekly_seasonality=True)
+modelo.fit(df)
+
+# Predecir los próximos 90 días
+futuro = modelo.make_future_dataframe(periods=90)
+prediccion = modelo.predict(futuro)
+
+# Escribir predicciones al DWH para consumo desde BI
+prediccion[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].to_sql(
+    'pred_demanda_electronica',
+    engine,
+    schema='dm_ventas',
+    if_exists='replace',
+    index=False
+)
+```
+
+---
+
+## Gobernanza del Acceso a Datos Sensibles
+
+### Clasificación de datos
+
+| Nivel | Descripción | Ejemplos | Control de acceso |
+|---|---|---|---|
+| **Público** | Puede verlo cualquier empleado | Catálogo de productos, precios de lista | Sin restricción |
+| **Interno** | Visible dentro de la empresa | Ventas por región, inventario | Autenticación requerida |
+| **Confidencial** | Solo personas autorizadas | Margen por producto, costos | RLS + rol específico |
+| **Restringido** | Solo personas con necesidad explícita | Datos personales de clientes, sueldos | RLS + aprobación del Data Owner + auditoría |
+
+### Enmascaramiento de datos (*Data Masking*)
+
+Para datos sensibles que los analistas necesitan usar pero no ver en detalle:
+
+```sql
+-- Vista con enmascaramiento para analistas sin permiso de datos personales
+CREATE VIEW dm_ventas.v_dim_cliente_enmascarada AS
+SELECT
+    id_cliente,
+    -- Enmascarar datos personales
+    CONCAT(LEFT(razon_social, 3), '***') AS razon_social,
+    segmento,
+    ciudad,
+    provincia,
+    region,
+    tipo_cliente,
+    is_current
+FROM dm_ventas.dim_cliente;
+
+-- El analista de marketing ve: "Gar***" en vez de "García María"
+-- Puede analizar por segmento, región, tipo, pero no identifica personas
+```
+
+---
+
 ## La arquitectura Inmon completa: visión de conjunto
 
 Después de completar las 5 etapas, la arquitectura Inmon se ve así:
@@ -346,7 +550,10 @@ ERP | CRM | SCM | Logística | Excel
 
 - **Few, S.** — *Show Me the Numbers: Designing Tables and Graphs to Enlighten*. Analytics Press.
 - **Few, S.** — *Information Dashboard Design*. Analytics Press.
+- **Knaflic, C.N.** — *Storytelling with Data: A Data Visualization Guide for Business Professionals*. Wiley. (Referencia obligatoria para data storytelling).
 - **Microsoft** — Documentación oficial de Power BI — [docs.microsoft.com/power-bi](https://docs.microsoft.com/es-es/power-bi/).
 - **Tableau** — Documentación oficial — [help.tableau.com](https://help.tableau.com/current/pro/desktop/es-es/gettingstarted_overview.htm).
 - **Inmon, W.H.** — *Building the Data Warehouse*, 4ta edición. Capítulo 9: "The End User Interface". Wiley.
 - **DAMA International** — *DAMA-DMBOK*, Capítulo 14: "Data Warehousing and Business Intelligence".
+- **Ferrari, A. & Russo, M.** — *The Definitive Guide to DAX*, 2da edición. Microsoft Press. (Para métricas avanzadas en Power BI).
+- **Taylor, S.J. & Letham, B.** — *Forecasting at Scale* (paper de Facebook Prophet). (Para integración ML + DWH).

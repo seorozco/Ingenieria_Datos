@@ -308,6 +308,256 @@ Contiene los datos al nivel más granular posible (línea de transacción). Perm
 
 ---
 
+## Patrones Avanzados en los Data Marts Inmon
+
+### Data Marts con múltiples tablas de hechos
+
+Un mismo Data Mart puede contener más de una tabla de hechos si ambas comparten las mismas dimensiones y pertenecen al mismo dominio de negocio.
+
+**Ejemplo: Data Mart de Ventas con hechos de venta y hechos de devolución**
+
+```sql
+-- Hecho principal: ventas
+CREATE TABLE dm_ventas.fact_ventas (
+    id_tiempo      INTEGER NOT NULL REFERENCES dm_ventas.dim_tiempo,
+    id_cliente     INTEGER NOT NULL REFERENCES dm_ventas.dim_cliente,
+    id_producto    INTEGER NOT NULL REFERENCES dm_ventas.dim_producto,
+    numero_factura VARCHAR(30) NOT NULL,
+    linea          SMALLINT    NOT NULL,
+    cantidad       NUMERIC(10,3) NOT NULL,
+    total_neto     NUMERIC(14,2) NOT NULL,
+    margen_bruto   NUMERIC(14,2),
+    PRIMARY KEY (numero_factura, linea)
+);
+
+-- Hecho complementario: devoluciones (mismas dimensiones)
+CREATE TABLE dm_ventas.fact_devoluciones (
+    id_tiempo         INTEGER NOT NULL REFERENCES dm_ventas.dim_tiempo,
+    id_cliente        INTEGER NOT NULL REFERENCES dm_ventas.dim_cliente,
+    id_producto       INTEGER NOT NULL REFERENCES dm_ventas.dim_producto,
+    numero_nc         VARCHAR(30) NOT NULL,  -- nota de crédito
+    linea             SMALLINT    NOT NULL,
+    factura_original  VARCHAR(30) NOT NULL,  -- referencia a la venta
+    cantidad_devuelta NUMERIC(10,3) NOT NULL,
+    monto_devuelto    NUMERIC(14,2) NOT NULL,
+    motivo_devolucion VARCHAR(50),
+    PRIMARY KEY (numero_nc, linea)
+);
+
+-- Ahora el usuario puede analizar:
+-- "Ventas netas ajustadas" = fact_ventas.total_neto - fact_devoluciones.monto_devuelto
+-- "Tasa de devolución" = fact_devoluciones.cantidad / fact_ventas.cantidad
+```
+
+---
+
+### Dimensiones Conformadas entre Data Marts Inmon
+
+En la arquitectura Inmon, las dimensiones conformadas tienen una fuente garantizada: **todas provienen del EDW**. Esto simplifica enormemente la conformación comparado con Kimball (donde las dimensiones se construyen desde los sistemas fuente).
+
+```
+EDW (3FN)
+├── edw.cliente → genera → dm_ventas.dim_cliente
+│                        → dm_finanzas.dim_cliente
+│                        → dm_logistica.dim_cliente
+│   (misma fuente = mismo contenido = conformadas por construcción)
+│
+├── edw.producto → genera → dm_ventas.dim_producto
+│                         → dm_compras.dim_producto
+│                         → dm_inventario.dim_producto
+│
+└── edw.tiempo → genera → dm_ventas.dim_tiempo
+                        → dm_finanzas.dim_tiempo
+                        → dm_logistica.dim_tiempo
+```
+
+**Implementación práctica: un proceso compartido de generación de dimensiones**
+
+```sql
+-- Vista compartida que alimenta dim_cliente en TODOS los Data Marts
+CREATE OR REPLACE VIEW edw.v_dim_cliente AS
+SELECT
+    c.id_cliente       AS cliente_key,
+    c.cliente_src_key,
+    c.razon_social,
+    tc.descripcion     AS tipo_cliente,
+    s.nombre           AS segmento,
+    ci.nombre          AS ciudad,
+    p.nombre           AS provincia,
+    pa.nombre          AS pais,
+    c.estado,
+    c.fecha_efectiva   AS valid_from,
+    c.fecha_vencimiento AS valid_to,
+    c.es_vigente       AS is_current
+FROM edw.cliente c
+JOIN edw.tipo_cliente tc ON c.id_tipo     = tc.id_tipo
+JOIN edw.ciudad ci       ON c.id_ciudad   = ci.id_ciudad
+JOIN edw.provincia p     ON ci.id_provincia = p.id_provincia
+JOIN edw.pais pa         ON p.id_pais     = pa.id_pais
+LEFT JOIN edw.segmento s ON c.id_segmento = s.id_segmento;
+
+-- Cada Data Mart usa la misma vista para popular su dim_cliente:
+INSERT INTO dm_ventas.dim_cliente    SELECT * FROM edw.v_dim_cliente;
+INSERT INTO dm_finanzas.dim_cliente  SELECT * FROM edw.v_dim_cliente;
+INSERT INTO dm_logistica.dim_cliente SELECT * FROM edw.v_dim_cliente;
+```
+
+---
+
+### Tablas de Hechos Periódicas (*Periodic Snapshot*) en el contexto Inmon
+
+El EDW puede generar Data Marts con snapshots periódicos que no existen como tales en el modelo normalizado:
+
+```sql
+-- Snapshot mensual de saldos de cuenta corriente
+-- (derivado del EDW que almacena cada movimiento individual)
+CREATE TABLE dm_finanzas.fact_saldo_mensual (
+    id_tiempo_mes  INTEGER NOT NULL,  -- último día del mes
+    id_cliente     INTEGER NOT NULL,
+    saldo_inicio   NUMERIC(14,2) NOT NULL,
+    total_debitos  NUMERIC(14,2) NOT NULL,
+    total_creditos NUMERIC(14,2) NOT NULL,
+    saldo_cierre   NUMERIC(14,2) NOT NULL,
+    dias_mora      INTEGER DEFAULT 0,
+    PRIMARY KEY (id_tiempo_mes, id_cliente)
+);
+
+-- Query de derivación desde el EDW
+INSERT INTO dm_finanzas.fact_saldo_mensual
+SELECT
+    TO_CHAR(DATE_TRUNC('MONTH', m.fecha) + INTERVAL '1 MONTH - 1 DAY', 'YYYYMMDD')::INT AS id_tiempo_mes,
+    dc.id_cliente,
+    -- Saldo de inicio: saldo de cierre del mes anterior
+    LAG(SUM(CASE WHEN m.tipo = 'D' THEN m.monto ELSE -m.monto END))
+        OVER (PARTITION BY m.id_cliente ORDER BY DATE_TRUNC('MONTH', m.fecha)) AS saldo_inicio,
+    SUM(CASE WHEN m.tipo = 'D' THEN m.monto ELSE 0 END)  AS total_debitos,
+    SUM(CASE WHEN m.tipo = 'C' THEN m.monto ELSE 0 END)   AS total_creditos,
+    SUM(CASE WHEN m.tipo = 'D' THEN m.monto ELSE -m.monto END) AS saldo_cierre,
+    -- Días de mora: diferencia entre vencimiento y último pago
+    MAX(m.dias_mora)                                        AS dias_mora
+FROM edw.movimiento_cuenta m
+JOIN dm_finanzas.dim_cliente dc ON dc.cliente_key = m.id_cliente AND dc.is_current = TRUE
+GROUP BY DATE_TRUNC('MONTH', m.fecha), m.id_cliente, dc.id_cliente;
+```
+
+---
+
+## Tests de Consistencia EDW ↔ Data Mart
+
+La regla de oro de Inmon es que **los totales del Data Mart deben coincidir exactamente con los del EDW**. Estos tests se ejecutan automáticamente después de cada derivación:
+
+```sql
+-- Test 1: Total de ventas del mes debe coincidir
+WITH edw_total AS (
+    SELECT SUM(lp.cantidad * lp.precio_unitario * (1 - lp.descuento)) AS total_edw
+    FROM edw.linea_pedido lp
+    JOIN edw.pedido p ON lp.id_pedido = p.id_pedido
+    WHERE p.fecha_pedido BETWEEN '2025-03-01' AND '2025-03-31'
+),
+dm_total AS (
+    SELECT SUM(total_neto) AS total_dm
+    FROM dm_ventas.fact_ventas f
+    JOIN dm_ventas.dim_tiempo t ON f.id_tiempo = t.id_tiempo
+    WHERE t.anio = 2025 AND t.mes_numero = 3
+)
+SELECT
+    edw_total.total_edw,
+    dm_total.total_dm,
+    ABS(edw_total.total_edw - dm_total.total_dm) AS diferencia,
+    CASE WHEN ABS(edw_total.total_edw - dm_total.total_dm) < 0.01
+         THEN 'PASS' ELSE 'FAIL' END AS resultado
+FROM edw_total, dm_total;
+
+-- Test 2: Cantidad de clientes únicos debe coincidir
+WITH edw_cli AS (
+    SELECT COUNT(DISTINCT p.id_cliente) AS clientes_edw
+    FROM edw.pedido p
+    WHERE p.fecha_pedido BETWEEN '2025-03-01' AND '2025-03-31'
+),
+dm_cli AS (
+    SELECT COUNT(DISTINCT f.id_cliente) AS clientes_dm
+    FROM dm_ventas.fact_ventas f
+    JOIN dm_ventas.dim_tiempo t ON f.id_tiempo = t.id_tiempo
+    WHERE t.anio = 2025 AND t.mes_numero = 3
+)
+SELECT
+    edw_cli.clientes_edw,
+    dm_cli.clientes_dm,
+    CASE WHEN edw_cli.clientes_edw = dm_cli.clientes_dm
+         THEN 'PASS' ELSE 'FAIL' END AS resultado
+FROM edw_cli, dm_cli;
+```
+
+---
+
+## Ejercicio Práctico: Data Mart de Logística
+
+**Contexto:** La empresa necesita analizar los tiempos de entrega para mejorar su servicio logístico.
+
+**Tablas del EDW involucradas:**
+
+```
+edw.pedido, edw.entrega, edw.ruta, edw.deposito,
+edw.cliente, edw.ciudad, edw.producto
+```
+
+**Diseño del Data Mart:**
+
+```sql
+-- Dimensiones (conformadas con DM Ventas)
+dm_logistica.dim_tiempo     -- reutilizada
+dm_logistica.dim_cliente    -- reutilizada
+dm_logistica.dim_producto   -- reutilizada
+
+-- Dimensiones propias
+CREATE TABLE dm_logistica.dim_deposito (
+    id_deposito    SERIAL PRIMARY KEY,
+    deposito_key   BIGINT NOT NULL,
+    nombre         VARCHAR(100),
+    ciudad         VARCHAR(100),
+    provincia      VARCHAR(100),
+    capacidad_m3   NUMERIC(10,2),
+    is_current     BOOLEAN DEFAULT TRUE
+);
+
+CREATE TABLE dm_logistica.dim_transportista (
+    id_transportista SERIAL PRIMARY KEY,
+    nombre           VARCHAR(200),
+    tipo             VARCHAR(50),  -- 'Propio', 'Tercerizado'
+    is_current       BOOLEAN DEFAULT TRUE
+);
+
+-- Tabla de hechos: accumulating snapshot (un pedido = una fila que se actualiza)
+CREATE TABLE dm_logistica.fact_ciclo_entrega (
+    id_fecha_pedido       INTEGER REFERENCES dim_tiempo,
+    id_fecha_preparacion  INTEGER REFERENCES dim_tiempo,
+    id_fecha_despacho     INTEGER REFERENCES dim_tiempo,
+    id_fecha_entrega      INTEGER REFERENCES dim_tiempo,
+    id_cliente            INTEGER NOT NULL REFERENCES dim_cliente,
+    id_deposito_origen    INTEGER REFERENCES dim_deposito,
+    id_transportista      INTEGER REFERENCES dim_transportista,
+    numero_pedido         VARCHAR(30) PRIMARY KEY,
+    -- Métricas de duración
+    dias_preparacion      INTEGER,  -- preparacion - pedido
+    dias_transito         INTEGER,  -- entrega - despacho
+    dias_total            INTEGER,  -- entrega - pedido
+    -- Métricas de volumen
+    bultos                INTEGER,
+    peso_kg               NUMERIC(10,2),
+    -- Indicadores
+    entrega_a_tiempo      BOOLEAN,  -- dias_total <= SLA prometido
+    motivo_demora         VARCHAR(100)
+);
+```
+
+**Preguntas que responde:**
+- ¿Cuál es el tiempo promedio de entrega por región?
+- ¿Qué transportista tiene mejor tasa de entrega a tiempo?
+- ¿Qué depósitos están generando más demoras en la preparación?
+- ¿La promesa de entrega se está cumpliendo por segmento de cliente?
+
+---
+
 ## Gobierno de los Data Marts
 
 En la arquitectura Inmon, los Data Marts tienen reglas de gobierno que el equipo de datos debe hacer cumplir:
@@ -358,3 +608,5 @@ ETAPA 5: Capa de Acceso Analítico
 - **Inmon, W.H.** — *Building the Data Warehouse*, 4ta edición. Capítulo 8: "The Data Mart". Wiley.
 - **Kimball, R. & Ross, M.** — *The Data Warehouse Toolkit*, 3ra edición. Capítulo 2: "Retail Sales". Wiley. (Para el diseño del esquema estrella del Data Mart).
 - **Golfarelli, M. & Rizzi, S.** — *Data Warehouse Design: Modern Principles and Methodologies*. Capítulo 7. McGraw-Hill.
+- **Adamson, C.** — *Star Schema: The Complete Reference*. McGraw-Hill. (Patrones avanzados de esquemas estrella).
+- **Linstedt, D. & Olschimke, M.** — *Building a Scalable Data Warehouse with Data Vault 2.0*. Morgan Kaufmann. (Alternativa moderna al EDW 3FN de Inmon).
