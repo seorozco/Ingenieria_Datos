@@ -1,15 +1,9 @@
-"""Caso sintetico y controles compartidos por los notebooks de Unidad III."""
+"""Datos, normalizacion y evaluacion comunes a los cinco notebooks de Unidad III."""
 
-from decimal import Decimal, InvalidOperation
-import hashlib
-import hmac
-import json
 import re
-import sqlite3
-from uuid import uuid4
+from decimal import Decimal, InvalidOperation
 
 import pandas as pd
-
 
 FECHA_CORTE = pd.Timestamp("2026-10-06T12:00:00Z")
 VERSION_CONTRATO = "1.0.0"
@@ -79,20 +73,6 @@ def normalizar(datos):
     return resultado
 
 
-def perfil(datos):
-    filas = []
-    for columna in datos.columns:
-        serie = datos[columna]
-        blancos = serie.astype("string").str.strip().eq("").fillna(False)
-        faltantes = serie.isna() | blancos
-        filas.append({
-            "columna": columna, "tipo": str(serie.dtype), "filas": len(datos),
-            "faltantes": int(faltantes.sum()), "distintos_no_nulos": int(serie.nunique()),
-            "completitud_pct": 100 * (~faltantes).mean() if len(datos) else None,
-        })
-    return pd.DataFrame(filas)
-
-
 def evaluar(datos, productos, referencia):
     """Evalua todas las filas; exactitud solo sobre evidencia disponible."""
     referencia = referencia.copy()
@@ -136,132 +116,3 @@ def evaluar(datos, productos, referencia):
     aceptadas = datos[~datos["fila_fuente"].isin(ids_rechazados)].copy()
     assert len(datos) == len(aceptadas) + len(rechazadas)
     return aceptadas, rechazadas, pd.DataFrame(resumen), detalle
-
-
-def puerta_publicacion(total, rechazadas, max_rechazo=0.20):
-    if not 0 <= max_rechazo <= 1 or total < 0 or not 0 <= rechazadas <= total:
-        raise ValueError("Parametros invalidos para la puerta de publicacion")
-    return total > 0 and rechazadas < total and rechazadas / total <= max_rechazo
-
-
-def huella(datos):
-    contenido = datos.to_json(orient="split", date_format="iso", index=False)
-    return hashlib.sha256(contenido.encode("utf-8")).hexdigest()
-
-
-def nueva_conexion():
-    conexion = sqlite3.connect(":memory:")
-    conexion.execute("PRAGMA foreign_keys = ON")
-    conexion.executescript("""
-        CREATE TABLE productos (id_producto INTEGER PRIMARY KEY, producto TEXT NOT NULL);
-        CREATE TABLE ventas (
-            id_venta INTEGER PRIMARY KEY,
-            id_producto INTEGER NOT NULL REFERENCES productos(id_producto),
-            fecha_venta TEXT NOT NULL,
-            monto_centavos INTEGER NOT NULL CHECK (monto_centavos > 0),
-            moneda TEXT NOT NULL CHECK (moneda IN ('ARS', 'USD', 'EUR')),
-            fila_fuente TEXT NOT NULL,
-            lote_inicial TEXT NOT NULL
-        );
-        CREATE TABLE lotes (
-            lote TEXT PRIMARY KEY, huella TEXT NOT NULL, contrato TEXT NOT NULL,
-            estado TEXT NOT NULL, total INTEGER NOT NULL, aceptadas INTEGER NOT NULL,
-            rechazadas INTEGER NOT NULL, nuevas INTEGER NOT NULL, existentes INTEGER NOT NULL
-        );
-        CREATE TABLE hallazgos (
-            lote TEXT NOT NULL REFERENCES lotes(lote), fila_fuente TEXT NOT NULL,
-            regla TEXT NOT NULL, accion TEXT NOT NULL
-        );
-    """)
-    return conexion
-
-
-def ejecutar_etl(datos_crudos, productos, referencia, conexion):
-    datos = normalizar(datos_crudos)
-    aceptadas, rechazadas, metricas, detalle = evaluar(datos, productos, referencia)
-    lote = uuid4().hex
-    estado = "PUBLICADO" if puerta_publicacion(len(datos), len(rechazadas)) else "BLOQUEADO"
-    nuevas, existentes = 0, 0
-    try:
-        with conexion:
-            if estado == "PUBLICADO":
-                for producto in productos.itertuples(index=False):
-                    existente = conexion.execute("SELECT producto FROM productos WHERE id_producto=?", (int(producto.id_producto),)).fetchone()
-                    if existente is None:
-                        conexion.execute("INSERT INTO productos VALUES (?, ?)", (int(producto.id_producto), producto.producto))
-                    elif existente[0] != producto.producto:
-                        raise ValueError("Cambio de maestro: requiere politica SCD aprobada")
-                for venta in aceptadas.itertuples(index=False):
-                    valores = (int(venta.id_producto), venta.fecha_venta.date().isoformat(), int(venta.monto_centavos), str(venta.moneda))
-                    existente = conexion.execute("SELECT id_producto, fecha_venta, monto_centavos, moneda FROM ventas WHERE id_venta=?", (int(venta.id_venta),)).fetchone()
-                    if existente is None:
-                        conexion.execute("INSERT INTO ventas VALUES (?, ?, ?, ?, ?, ?, ?)", (int(venta.id_venta), *valores, venta.fila_fuente, lote))
-                        nuevas += 1
-                    elif existente == valores:
-                        existentes += 1
-                    else:
-                        raise ValueError("Conflicto de contenido para una venta ya publicada")
-                claves = [int(identificador) for identificador in aceptadas["id_venta"]]
-                marcadores = ",".join("?" for _ in claves)
-                destino = pd.read_sql_query(f"SELECT id_venta, moneda, monto_centavos FROM ventas WHERE id_venta IN ({marcadores})", conexion, params=claves)
-                assert len(destino) == len(aceptadas)
-                esperado = {str(moneda): int(total) for moneda, total in aceptadas.groupby("moneda")["monto_centavos"].sum().items()}
-                obtenido = {str(moneda): int(total) for moneda, total in destino.groupby("moneda")["monto_centavos"].sum().items()}
-                assert esperado == obtenido
-            conexion.execute("INSERT INTO lotes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", (lote, huella(datos_crudos), VERSION_CONTRATO, estado, len(datos), len(aceptadas), len(rechazadas), nuevas, existentes))
-            conexion.executemany("INSERT INTO hallazgos VALUES (?, ?, ?, ?)", [(lote, fila.fila_fuente, fila.regla, fila.accion) for fila in detalle.itertuples(index=False)])
-    except Exception:
-        with conexion:
-            conexion.execute("INSERT INTO lotes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", (lote, huella(datos_crudos), VERSION_CONTRATO, "ERROR_TECNICO", len(datos), len(aceptadas), len(rechazadas), 0, 0))
-        raise
-    return {"lote": lote, "estado": estado, "nuevas": nuevas, "existentes": existentes, "aceptadas": aceptadas, "rechazadas": rechazadas, "metricas": metricas, "detalle": detalle}
-
-
-def token_persona(valor, clave):
-    if len(clave) < 32:
-        raise ValueError("Usar una clave aleatoria de al menos 32 bytes para la demo")
-    if pd.isna(valor) or not str(valor).strip():
-        return None
-    mensaje = f"demo:email:{str(valor).strip().lower()}".encode("utf-8")
-    return hmac.new(clave, mensaje, hashlib.sha256).hexdigest()
-
-
-def vista_por_rol(datos, rol, clave):
-    columnas = ["id_venta", "id_producto", "fecha_venta", "monto_centavos", "moneda"]
-    if rol == "analista":
-        return datos[columnas].copy()
-    if rol == "steward":
-        resultado = datos[columnas].copy()
-        resultado["email_token"] = datos["email"].map(lambda valor: token_persona(valor, clave))
-        return resultado
-    raise PermissionError("Rol sin vista autorizada en la simulacion")
-
-
-def metadatos():
-    return {
-        "activo": "silver.ventas", "version": "1.0.0", "grano": "una fila por id_venta",
-        "owner": "Gerencia Comercial", "steward": "Steward Comercial",
-        "finalidad": "analitica de ventas", "clasificacion": "confidencial",
-        "retencion": "por definir y aprobar antes de produccion",
-        "columnas": [
-            {"nombre": "id_venta", "tipo": "INTEGER", "nullable": False, "termino": "Identificador de venta", "origen": "origen.id_venta", "transformacion": "entero positivo", "reglas": ["DQ_ID", "DQ_UNICIDAD"]},
-            {"nombre": "id_producto", "tipo": "INTEGER", "nullable": False, "termino": "Producto de la venta", "origen": "origen.id_producto", "transformacion": "lookup en productos", "reglas": ["DQ_FK_PRODUCTO"]},
-            {"nombre": "fecha_venta", "tipo": "DATE", "nullable": False, "termino": "Fecha del evento", "origen": "origen.fecha_venta", "transformacion": "parseo ISO", "reglas": ["DQ_FECHA"]},
-            {"nombre": "monto_centavos", "tipo": "INTEGER", "nullable": False, "termino": "Importe de linea en moneda original", "origen": "origen.monto", "transformacion": "Decimal por 100, sin conversion de moneda", "reglas": ["DQ_MONTO"]},
-            {"nombre": "moneda", "tipo": "TEXT", "nullable": False, "termino": "Moneda original", "origen": "origen.moneda", "transformacion": "strip y upper", "reglas": ["DQ_MONEDA"]},
-        ],
-    }
-
-
-def linaje(datos):
-    return {
-        "entidad_fuente": "ventas_ficticias", "huella": huella(datos),
-        "actividad": "normalizar_validar_publicar", "agente": "servicio_etl_demo",
-        "contrato": VERSION_CONTRATO, "entidad_destino": "silver.ventas",
-        "campos": metadatos()["columnas"],
-        "limite": "modelo didactico inspirado en PROV, no serializacion PROV conforme",
-    }
-
-
-def json_seguro(objeto):
-    return json.dumps(objeto, ensure_ascii=True, indent=2, allow_nan=False)

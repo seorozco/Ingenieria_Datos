@@ -48,7 +48,9 @@ La seleccion del kernel determina que Python ejecuta las celdas. Instalar un paq
 
 El orden es pedagogico. Cada notebook genera sus propios datos y puede ejecutarse de manera independiente. Ejecutar todas sus celdas de arriba hacia abajo; para repetir una demostracion, reiniciar el kernel y volver a ejecutarlo completo.
 
-Las primeras celdas localizan [gobierno_demo.py](gobierno_demo.py) desde la raiz del repositorio o la carpeta de los notebooks. Si aparece un error de ruta, comprobar el directorio de trabajo del kernel. Si aparece `ModuleNotFoundError`, comprobar el interprete seleccionado y la instalacion de requisitos.
+Las celdas de preparacion localizan [gobierno_demo.py](gobierno_demo.py) desde la raiz del repositorio o la carpeta de los notebooks. Ese modulo contiene solo el nucleo utilizado por los cinco ejemplos: datos ficticios, normalizacion, evaluacion por fila y sus auxiliares de esquema, importes e identificadores. Si aparece un error de ruta, comprobar el directorio de trabajo del kernel. Si aparece `ModuleNotFoundError`, comprobar el interprete seleccionado y la instalacion de requisitos.
+
+Las funciones especificas estan definidas y explicadas en las celdas de cada notebook: profiling en el 01; puerta del contrato en el 02; carga SQLite y auditoria en el 03 y el 05; catalogo, linaje, tokenizacion y vistas en el 04. Las funciones de carga se muestran en ambos ejemplos para que ninguno dependa de ejecutar el otro. No es necesario buscar esas implementaciones en un archivo externo.
 
 ## Paso 4 - Interpretar los errores esperados
 
@@ -69,4 +71,4 @@ Publicar el subconjunto apto de prueba **no corrige el lote original**: las 8 fi
 - La referencia de exactitud es parcial y ficticia; no demuestra exactitud de toda la poblacion.
 - Los metadatos con retencion pendiente, las aprobaciones simuladas y los eventos en memoria deben reemplazarse por decisiones y evidencias reales antes de produccion.
 
-Leer las explicaciones y ejercicios junto con el codigo del modulo comun permite entender que partes son controles tecnicos y cuales son responsabilidades de gobierno.
+Leer las funciones locales junto con las explicaciones y ejercicios permite entender que partes son controles tecnicos y cuales son responsabilidades de gobierno. El modulo comun se consulta solo para el caso de datos y las reglas de base que comparten los cinco ejemplos.

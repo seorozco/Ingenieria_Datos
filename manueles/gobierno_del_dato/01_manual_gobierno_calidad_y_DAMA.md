@@ -335,7 +335,7 @@ La matriz no es una declaracion de cumplimiento de clausulas. Para una auditoria
 
 Los notebooks se encuentran en `notebook/unidad_III`. Se ejecutan localmente en Python con pandas y modulos de la biblioteca estandar, como `sqlite3`, `json`, `decimal` y `hmac`. No requieren Databricks, Spark, Great Expectations, cuentas cloud, SQL Server ni servicios externos. Jupyter es solo la interfaz para ejecutar las celdas; no cambia el motor de procesamiento.
 
-Cada notebook arranca desde datos ficticios reproducibles y puede ejecutarse sin depender de outputs previos. Comparten un modulo pequeno que hace visibles las reglas y evita cinco implementaciones divergentes del mismo ETL. Las dependencias de ejecucion y de Jupyter se indican en el archivo de requisitos de esa carpeta.
+Cada notebook arranca desde datos ficticios reproducibles y puede ejecutarse sin depender de outputs previos. El modulo compartido conserva exclusivamente los datos, la normalizacion, la evaluacion por fila y sus auxiliares usados por los cinco ejemplos. Las funciones especificas de profiling, publicacion, carga SQLite, metadatos, linaje y privacidad estan definidas en las celdas del notebook correspondiente. El ETL se muestra tanto en el ejemplo de carga como en el de monitoreo para que ambos puedan estudiarse y ejecutarse independientemente. Las dependencias de ejecucion y de Jupyter se indican en el archivo de requisitos de esa carpeta.
 
 La [guia de ejecucion local](../../notebook/unidad_III/README.md) detalla instalacion, seleccion de kernel, orden de trabajo y limites. Ejemplos disponibles:
 
