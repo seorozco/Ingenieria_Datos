@@ -60,6 +60,16 @@ Unidad IV
     │   ├── SCD Tipo 2 — Historial completo
     │   └── SCD Tipo 3 — Valor anterior
     └── Implementación con SQL y Python
+
+Módulo de profundización docente (base SQL Server WideWorldImporters)
+├── 11 - Kimball Fase 01 - Planificación y Requerimientos
+├── 12 - Kimball Fase 02 - Modelado Dimensional
+├── 13 - Kimball Fase 03 - Diseño Físico
+├── 14 - Kimball Fase 04 - Diseño ETL
+├── 15 - Kimball Fase 05 - BI y Despliegue
+├── 16 - Topologías de Data Warehouse
+├── 17 - Guía de Tablas Dimensionales
+└── 18 - Guía de Tablas de Hechos
 ```
 
 ---

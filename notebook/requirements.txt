@@ -1,0 +1,19 @@
+# Data manipulation
+numpy==2.4.4
+pandas==3.0.2
+openpyxl           # motor para leer/escribir .xlsx con pandas
+
+# Storage / formats
+pyarrow==24.0.0
+deltalake==1.5.1
+
+# HTTP / Web Scraping
+requests
+beautifulsoup4
+lxml               # parser HTML alternativo para BeautifulSoup
+fake-useragent     # rotar User-Agent en scraping
+curl-cffi          # cliente HTTP con soporte TLS fingerprinting
+
+# Bases de datos
+pyodbc             # conector ODBC (SQL Server, etc.)
+sqlalchemy         # ORM y toolkit SQL
