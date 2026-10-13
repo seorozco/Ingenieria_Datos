@@ -3,6 +3,9 @@ numpy==2.4.4
 pandas==3.0.2
 openpyxl           # motor para leer/escribir .xlsx con pandas
 
+# Data quality
+great_expectations==1.24.0
+
 # Storage / formats
 pyarrow==24.0.0
 deltalake==1.5.1
