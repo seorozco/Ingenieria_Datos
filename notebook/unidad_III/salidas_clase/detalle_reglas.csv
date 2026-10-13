@@ -1,0 +1,145 @@
+fila_fuente,id_venta,regla,dimension,severidad,estado,valor,detalle
+1,1.0,DQ001,completitud,error,Cumple,1.0,El ID de venta debe estar presente.
+1,1.0,DQ002,unicidad,error,Cumple,1.0,El ID de venta debe ser único.
+1,1.0,DQ003,validez,error,Cumple,2025-01-05 00:00:00+00:00,La fecha de venta debe ser válida.
+1,1.0,DQ004,consistencia,error,Cumple,2025-01-05 00:00:00+00:00,La fecha de venta no puede ser futura.
+1,1.0,DQ005,integridad,error,Cumple,101,El cliente debe existir en el maestro.
+1,1.0,DQ006,integridad,error,Cumple,P01,El producto debe existir en el maestro.
+1,1.0,DQ007,exactitud_proxy,error,Cumple,1500,El monto debe ser mayor que cero y no superar 50000.
+1,1.0,DQ008,validez,error,Cumple,1,La cantidad debe ser un entero positivo.
+1,1.0,DQ009,consistencia,error,Cumple,ARS,La moneda debe pertenecer al dominio autorizado.
+1,1.0,DQ010,vigencia,error,Cumple,2025-01-06 00:00:00+00:00,La actualización debe estar dentro de los últimos 30 días.
+1,1.0,DQ011,validez,warning,Cumple,a@b.com,El email opcional debe tener formato válido.
+1,1.0,DQ012,exactitud,warning,Cumple,1500,El monto se compara solo si existe referencia.
+2,2.0,DQ001,completitud,error,Cumple,2.0,El ID de venta debe estar presente.
+2,2.0,DQ002,unicidad,error,Falla,2.0,El ID de venta debe ser único.
+2,2.0,DQ003,validez,error,Cumple,2025-01-06 00:00:00+00:00,La fecha de venta debe ser válida.
+2,2.0,DQ004,consistencia,error,Cumple,2025-01-06 00:00:00+00:00,La fecha de venta no puede ser futura.
+2,2.0,DQ005,integridad,error,Cumple,102,El cliente debe existir en el maestro.
+2,2.0,DQ006,integridad,error,Cumple,P02,El producto debe existir en el maestro.
+2,2.0,DQ007,exactitud_proxy,error,Cumple,2300,El monto debe ser mayor que cero y no superar 50000.
+2,2.0,DQ008,validez,error,Cumple,2,La cantidad debe ser un entero positivo.
+2,2.0,DQ009,consistencia,error,Cumple,ARS,La moneda debe pertenecer al dominio autorizado.
+2,2.0,DQ010,vigencia,error,Cumple,2025-01-07 00:00:00+00:00,La actualización debe estar dentro de los últimos 30 días.
+2,2.0,DQ011,validez,warning,Cumple,juan@ok.com,El email opcional debe tener formato válido.
+2,2.0,DQ012,exactitud,warning,No evaluable,2300,El monto se compara solo si existe referencia.
+3,2.0,DQ001,completitud,error,Cumple,2.0,El ID de venta debe estar presente.
+3,2.0,DQ002,unicidad,error,Falla,2.0,El ID de venta debe ser único.
+3,2.0,DQ003,validez,error,Cumple,2025-01-06 00:00:00+00:00,La fecha de venta debe ser válida.
+3,2.0,DQ004,consistencia,error,Cumple,2025-01-06 00:00:00+00:00,La fecha de venta no puede ser futura.
+3,2.0,DQ005,integridad,error,Cumple,102,El cliente debe existir en el maestro.
+3,2.0,DQ006,integridad,error,Cumple,P02,El producto debe existir en el maestro.
+3,2.0,DQ007,exactitud_proxy,error,Cumple,2300,El monto debe ser mayor que cero y no superar 50000.
+3,2.0,DQ008,validez,error,Cumple,2,La cantidad debe ser un entero positivo.
+3,2.0,DQ009,consistencia,error,Cumple,ARS,La moneda debe pertenecer al dominio autorizado.
+3,2.0,DQ010,vigencia,error,Cumple,2025-01-07 00:00:00+00:00,La actualización debe estar dentro de los últimos 30 días.
+3,2.0,DQ011,validez,warning,Cumple,juan@ok.com,El email opcional debe tener formato válido.
+3,2.0,DQ012,exactitud,warning,No evaluable,2300,El monto se compara solo si existe referencia.
+4,3.0,DQ001,completitud,error,Cumple,3.0,El ID de venta debe estar presente.
+4,3.0,DQ002,unicidad,error,Cumple,3.0,El ID de venta debe ser único.
+4,3.0,DQ003,validez,error,Falla,NaT,La fecha de venta debe ser válida.
+4,3.0,DQ004,consistencia,error,No evaluable,NaT,La fecha de venta no puede ser futura.
+4,3.0,DQ005,integridad,error,Cumple,103,El cliente debe existir en el maestro.
+4,3.0,DQ006,integridad,error,Cumple,P01,El producto debe existir en el maestro.
+4,3.0,DQ007,exactitud_proxy,error,Cumple,850,El monto debe ser mayor que cero y no superar 50000.
+4,3.0,DQ008,validez,error,Cumple,1,La cantidad debe ser un entero positivo.
+4,3.0,DQ009,consistencia,error,Cumple,ARS,La moneda debe pertenecer al dominio autorizado.
+4,3.0,DQ010,vigencia,error,No evaluable,2025-01-10 00:00:00+00:00,La actualización debe estar dentro de los últimos 30 días.
+4,3.0,DQ011,validez,warning,Cumple,ana@test.com,El email opcional debe tener formato válido.
+4,3.0,DQ012,exactitud,warning,No evaluable,850,El monto se compara solo si existe referencia.
+5,,DQ001,completitud,error,Falla,nan,El ID de venta debe estar presente.
+5,,DQ002,unicidad,error,No evaluable,nan,El ID de venta debe ser único.
+5,,DQ003,validez,error,Cumple,2025-01-08 00:00:00+00:00,La fecha de venta debe ser válida.
+5,,DQ004,consistencia,error,Cumple,2025-01-08 00:00:00+00:00,La fecha de venta no puede ser futura.
+5,,DQ005,integridad,error,Cumple,104,El cliente debe existir en el maestro.
+5,,DQ006,integridad,error,Cumple,P01,El producto debe existir en el maestro.
+5,,DQ007,exactitud_proxy,error,Cumple,1200,El monto debe ser mayor que cero y no superar 50000.
+5,,DQ008,validez,error,Cumple,1,La cantidad debe ser un entero positivo.
+5,,DQ009,consistencia,error,Cumple,ARS,La moneda debe pertenecer al dominio autorizado.
+5,,DQ010,vigencia,error,Cumple,2025-01-09 00:00:00+00:00,La actualización debe estar dentro de los últimos 30 días.
+5,,DQ011,validez,warning,Cumple,ana2@test.com,El email opcional debe tener formato válido.
+5,,DQ012,exactitud,warning,No evaluable,1200,El monto se compara solo si existe referencia.
+6,5.0,DQ001,completitud,error,Cumple,5.0,El ID de venta debe estar presente.
+6,5.0,DQ002,unicidad,error,Cumple,5.0,El ID de venta debe ser único.
+6,5.0,DQ003,validez,error,Cumple,2025-01-09 00:00:00+00:00,La fecha de venta debe ser válida.
+6,5.0,DQ004,consistencia,error,Cumple,2025-01-09 00:00:00+00:00,La fecha de venta no puede ser futura.
+6,5.0,DQ005,integridad,error,Falla,9999,El cliente debe existir en el maestro.
+6,5.0,DQ006,integridad,error,Cumple,P02,El producto debe existir en el maestro.
+6,5.0,DQ007,exactitud_proxy,error,Falla,-50,El monto debe ser mayor que cero y no superar 50000.
+6,5.0,DQ008,validez,error,Cumple,1,La cantidad debe ser un entero positivo.
+6,5.0,DQ009,consistencia,error,Cumple,USD,La moneda debe pertenecer al dominio autorizado.
+6,5.0,DQ010,vigencia,error,Cumple,2025-01-10 00:00:00+00:00,La actualización debe estar dentro de los últimos 30 días.
+6,5.0,DQ011,validez,warning,Cumple,cliente@test.com,El email opcional debe tener formato válido.
+6,5.0,DQ012,exactitud,warning,No evaluable,-50,El monto se compara solo si existe referencia.
+7,6.0,DQ001,completitud,error,Cumple,6.0,El ID de venta debe estar presente.
+7,6.0,DQ002,unicidad,error,Cumple,6.0,El ID de venta debe ser único.
+7,6.0,DQ003,validez,error,Cumple,2025-01-10 00:00:00+00:00,La fecha de venta debe ser válida.
+7,6.0,DQ004,consistencia,error,Cumple,2025-01-10 00:00:00+00:00,La fecha de venta no puede ser futura.
+7,6.0,DQ005,integridad,error,Cumple,106,El cliente debe existir en el maestro.
+7,6.0,DQ006,integridad,error,Cumple,P01,El producto debe existir en el maestro.
+7,6.0,DQ007,exactitud_proxy,error,Falla,0,El monto debe ser mayor que cero y no superar 50000.
+7,6.0,DQ008,validez,error,Falla,0,La cantidad debe ser un entero positivo.
+7,6.0,DQ009,consistencia,error,Cumple,EUR,La moneda debe pertenecer al dominio autorizado.
+7,6.0,DQ010,vigencia,error,Cumple,2025-01-10 00:00:00+00:00,La actualización debe estar dentro de los últimos 30 días.
+7,6.0,DQ011,validez,warning,Cumple,c@test.com,El email opcional debe tener formato válido.
+7,6.0,DQ012,exactitud,warning,No evaluable,0,El monto se compara solo si existe referencia.
+8,7.0,DQ001,completitud,error,Cumple,7.0,El ID de venta debe estar presente.
+8,7.0,DQ002,unicidad,error,Cumple,7.0,El ID de venta debe ser único.
+8,7.0,DQ003,validez,error,Cumple,2025-01-11 00:00:00+00:00,La fecha de venta debe ser válida.
+8,7.0,DQ004,consistencia,error,Cumple,2025-01-11 00:00:00+00:00,La fecha de venta no puede ser futura.
+8,7.0,DQ005,integridad,error,Cumple,107,El cliente debe existir en el maestro.
+8,7.0,DQ006,integridad,error,Cumple,P02,El producto debe existir en el maestro.
+8,7.0,DQ007,exactitud_proxy,error,Falla,150000,El monto debe ser mayor que cero y no superar 50000.
+8,7.0,DQ008,validez,error,Cumple,1,La cantidad debe ser un entero positivo.
+8,7.0,DQ009,consistencia,error,Falla,BTC,La moneda debe pertenecer al dominio autorizado.
+8,7.0,DQ010,vigencia,error,Cumple,2025-01-12 00:00:00+00:00,La actualización debe estar dentro de los últimos 30 días.
+8,7.0,DQ011,validez,warning,Falla,juan@@err.com,El email opcional debe tener formato válido.
+8,7.0,DQ012,exactitud,warning,No evaluable,150000,El monto se compara solo si existe referencia.
+9,8.0,DQ001,completitud,error,Cumple,8.0,El ID de venta debe estar presente.
+9,8.0,DQ002,unicidad,error,Cumple,8.0,El ID de venta debe ser único.
+9,8.0,DQ003,validez,error,Cumple,2025-01-12 00:00:00+00:00,La fecha de venta debe ser válida.
+9,8.0,DQ004,consistencia,error,Cumple,2025-01-12 00:00:00+00:00,La fecha de venta no puede ser futura.
+9,8.0,DQ005,integridad,error,Cumple,108,El cliente debe existir en el maestro.
+9,8.0,DQ006,integridad,error,Cumple,P01,El producto debe existir en el maestro.
+9,8.0,DQ007,exactitud_proxy,error,Cumple,1800,El monto debe ser mayor que cero y no superar 50000.
+9,8.0,DQ008,validez,error,Cumple,1,La cantidad debe ser un entero positivo.
+9,8.0,DQ009,consistencia,error,Cumple,ARS,La moneda debe pertenecer al dominio autorizado.
+9,8.0,DQ010,vigencia,error,Cumple,2025-01-13 00:00:00+00:00,La actualización debe estar dentro de los últimos 30 días.
+9,8.0,DQ011,validez,warning,Cumple,b@test.com,El email opcional debe tener formato válido.
+9,8.0,DQ012,exactitud,warning,No evaluable,1800,El monto se compara solo si existe referencia.
+10,9.0,DQ001,completitud,error,Cumple,9.0,El ID de venta debe estar presente.
+10,9.0,DQ002,unicidad,error,Cumple,9.0,El ID de venta debe ser único.
+10,9.0,DQ003,validez,error,Cumple,2025-01-13 00:00:00+00:00,La fecha de venta debe ser válida.
+10,9.0,DQ004,consistencia,error,Cumple,2025-01-13 00:00:00+00:00,La fecha de venta no puede ser futura.
+10,9.0,DQ005,integridad,error,Cumple,109,El cliente debe existir en el maestro.
+10,9.0,DQ006,integridad,error,Cumple,P02,El producto debe existir en el maestro.
+10,9.0,DQ007,exactitud_proxy,error,Cumple,2000,El monto debe ser mayor que cero y no superar 50000.
+10,9.0,DQ008,validez,error,Cumple,2,La cantidad debe ser un entero positivo.
+10,9.0,DQ009,consistencia,error,Cumple,USD,La moneda debe pertenecer al dominio autorizado.
+10,9.0,DQ010,vigencia,error,Cumple,2025-01-14 00:00:00+00:00,La actualización debe estar dentro de los últimos 30 días.
+10,9.0,DQ011,validez,warning,Cumple,c@test.com,El email opcional debe tener formato válido.
+10,9.0,DQ012,exactitud,warning,Falla,2000,El monto se compara solo si existe referencia.
+11,10.0,DQ001,completitud,error,Cumple,10.0,El ID de venta debe estar presente.
+11,10.0,DQ002,unicidad,error,Cumple,10.0,El ID de venta debe ser único.
+11,10.0,DQ003,validez,error,Cumple,2025-01-14 00:00:00+00:00,La fecha de venta debe ser válida.
+11,10.0,DQ004,consistencia,error,Cumple,2025-01-14 00:00:00+00:00,La fecha de venta no puede ser futura.
+11,10.0,DQ005,integridad,error,Cumple,110,El cliente debe existir en el maestro.
+11,10.0,DQ006,integridad,error,Cumple,P02,El producto debe existir en el maestro.
+11,10.0,DQ007,exactitud_proxy,error,Cumple,1600,El monto debe ser mayor que cero y no superar 50000.
+11,10.0,DQ008,validez,error,Cumple,1,La cantidad debe ser un entero positivo.
+11,10.0,DQ009,consistencia,error,Cumple,ARS,La moneda debe pertenecer al dominio autorizado.
+11,10.0,DQ010,vigencia,error,Cumple,2025-01-14 00:00:00+00:00,La actualización debe estar dentro de los últimos 30 días.
+11,10.0,DQ011,validez,warning,Cumple,d@test.com,El email opcional debe tener formato válido.
+11,10.0,DQ012,exactitud,warning,No evaluable,1600,El monto se compara solo si existe referencia.
+12,11.0,DQ001,completitud,error,Cumple,11.0,El ID de venta debe estar presente.
+12,11.0,DQ002,unicidad,error,Cumple,11.0,El ID de venta debe ser único.
+12,11.0,DQ003,validez,error,Cumple,2025-01-15 00:00:00+00:00,La fecha de venta debe ser válida.
+12,11.0,DQ004,consistencia,error,Falla,2025-01-15 00:00:00+00:00,La fecha de venta no puede ser futura.
+12,11.0,DQ005,integridad,error,Cumple,111,El cliente debe existir en el maestro.
+12,11.0,DQ006,integridad,error,Cumple,P01,El producto debe existir en el maestro.
+12,11.0,DQ007,exactitud_proxy,error,Cumple,1600,El monto debe ser mayor que cero y no superar 50000.
+12,11.0,DQ008,validez,error,Cumple,1,La cantidad debe ser un entero positivo.
+12,11.0,DQ009,consistencia,error,Cumple,ARS,La moneda debe pertenecer al dominio autorizado.
+12,11.0,DQ010,vigencia,error,Falla,2025-01-15 00:00:00+00:00,La actualización debe estar dentro de los últimos 30 días.
+12,11.0,DQ011,validez,warning,Cumple,e@test.com,El email opcional debe tener formato válido.
+12,11.0,DQ012,exactitud,warning,No evaluable,1600,El monto se compara solo si existe referencia.

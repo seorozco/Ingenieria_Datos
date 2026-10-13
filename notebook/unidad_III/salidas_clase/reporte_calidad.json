@@ -1,0 +1,74 @@
+{
+  "contrato": {
+    "nombre": "ventas_para_analitica",
+    "version": "1.0.0",
+    "estado": "PASS",
+    "errores_esquema": []
+  },
+  "datos": {
+    "filas_entrada": 12,
+    "filas_aptas": 4,
+    "filas_rechazadas": 8,
+    "tasa_rechazo_pct": 66.7,
+    "estado_reglas": "FAIL",
+    "fallas_por_regla": {
+      "DQ001": 1,
+      "DQ002": 2,
+      "DQ003": 1,
+      "DQ004": 1,
+      "DQ005": 1,
+      "DQ007": 3,
+      "DQ008": 1,
+      "DQ009": 1,
+      "DQ010": 1
+    },
+    "advertencias": 2,
+    "perfil": {
+      "Completitud de id_venta": {
+        "resultado": 91.7,
+        "denominador": 12
+      },
+      "Unicidad de id_venta": {
+        "resultado": 83.3,
+        "denominador": 12
+      },
+      "Validez de fecha_venta": {
+        "resultado": 91.7,
+        "denominador": 12
+      },
+      "Consistencia de moneda": {
+        "resultado": 91.7,
+        "denominador": 12
+      },
+      "Actualidad de actualización": {
+        "resultado": 91.7,
+        "denominador": 12
+      },
+      "Exactitud proxy": {
+        "resultado": 50.0,
+        "denominador": 2
+      },
+      "Cobertura de referencia": {
+        "resultado": 16.7,
+        "denominador": 12
+      },
+      "Outliers IQR": {
+        "resultado": 1.0,
+        "denominador": 12
+      }
+    }
+  },
+  "publicacion": {
+    "estado": "FAIL",
+    "motivo": "La tasa de rechazo supera el umbral aprobado."
+  },
+  "pruebas": {
+    "estado": "PASS",
+    "pruebas_aprobadas": 6
+  },
+  "evidencia": {
+    "fecha_ejecucion_utc": "2026-10-13T13:31:03.931532+00:00",
+    "fecha_corte": "2025-01-14 00:00:00+00:00",
+    "archivo_fuente": "CSV ficticio embebido en la notebook"
+  }
+}

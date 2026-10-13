@@ -1,0 +1,13 @@
+regla,severidad,Cumple,Falla,No evaluable,evaluadas,cumplimiento_pct
+DQ001,error,11,1,0,12,91.7
+DQ002,error,9,2,1,11,81.8
+DQ003,error,11,1,0,12,91.7
+DQ004,error,10,1,1,11,90.9
+DQ005,error,11,1,0,12,91.7
+DQ006,error,12,0,0,12,100.0
+DQ007,error,9,3,0,12,75.0
+DQ008,error,11,1,0,12,91.7
+DQ009,error,11,1,0,12,91.7
+DQ010,error,10,1,1,11,90.9
+DQ011,warning,11,1,0,12,91.7
+DQ012,warning,1,1,10,2,50.0
