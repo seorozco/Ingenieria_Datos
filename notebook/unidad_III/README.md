@@ -48,6 +48,30 @@ La seleccion del kernel determina que Python ejecuta las celdas. Instalar un paq
 
 El orden es pedagogico. Cada notebook genera sus propios datos y puede ejecutarse de manera independiente. Ejecutar todas sus celdas de arriba hacia abajo; para repetir una demostracion, reiniciar el kernel y volver a ejecutarlo completo.
 
+### Versiones de clase: metadatos y monitoreo
+
+Estas versiones agregan explicaciones, preguntas y resultados visibles en cada paso:
+
+| Notebook de clase | Recorrido |
+| --- | --- |
+| [04 - Metadatos, linaje y privacidad](04_metadatos_linaje_y_privacidad_clase.ipynb) | 14 pasos: fuentes, calidad, glosario, catalogo, huellas, linaje previsto, HMAC y vistas por rol. |
+| [05 - Monitoreo e incidentes](05_monitoreo_e_incidentes_clase.ipynb) | 18 pasos: fuentes, escenarios, puerta, SQLite, tablero, deriva, incidente, restauracion y recuperacion verificada. |
+
+Ejecutar una celda por vez con `Shift+Enter` y comentar su salida antes de continuar.
+Ambas versiones crean todos sus datos y funciones dentro del notebook: no importan
+modulos del repositorio ni requieren ejecutar otro notebook. Solo necesitan pandas
+y un kernel Jupyter/IPython; no usan pytest. Incluyen salidas de una ejecucion completa
+para facilitar la lectura, pero conviene reiniciar el kernel y recorrerlas en orden
+para reproducir la practica. Repetir celdas de carga o de claves aisladamente cambia
+el estado de la demostracion.
+
+El linaje del 04 describe un mapeo previsto, no una publicacion ejecutada. En el 05,
+el cierre del incidente del subconjunto degradado no resuelve las ocho filas
+defectuosas originales ni el evento separado de deriva. Las claves HMAC no se muestran
+ni se guardan; la base SQLite y los eventos operativos solo viven en memoria.
+
+### Dependencias de los notebooks originales
+
 Las celdas de preparacion localizan [gobierno_demo.py](gobierno_demo.py) desde la raiz del repositorio o la carpeta de los notebooks. Ese modulo contiene solo el nucleo utilizado por los cinco ejemplos: datos ficticios, normalizacion, evaluacion por fila y sus auxiliares de esquema, importes e identificadores. Si aparece un error de ruta, comprobar el directorio de trabajo del kernel. Si aparece `ModuleNotFoundError`, comprobar el interprete seleccionado y la instalacion de requisitos.
 
 Las funciones especificas estan definidas y explicadas en las celdas de cada notebook: profiling en el 01; puerta del contrato en el 02; carga SQLite y auditoria en el 03 y el 05; catalogo, linaje, tokenizacion y vistas en el 04. Las funciones de carga se muestran en ambos ejemplos para que ninguno dependa de ejecutar el otro. No es necesario buscar esas implementaciones en un archivo externo.
