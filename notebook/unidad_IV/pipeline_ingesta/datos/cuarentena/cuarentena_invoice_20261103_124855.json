@@ -1,0 +1,8 @@
+[
+  {
+    "id_raw": 1,
+    "lote_id": "LOTE_20261103_112725",
+    "payload": "{\"ExtendedPrice\": \"2645.0\", \"InvoiceID\": \"1\", \"InvoiceLineID\": \"1\", \"LastEditedWhen\": \"2013-01-01T12:00:00\", \"Quantity\": \"10\", \"StockItemID\": \"67\", \"TaxAmount\": \"345.0\", \"TaxRate\": \"15.0\", \"UnitPrice\": \"-230.0\"}",
+    "errores_concatenados": "PRECIO_NEGATIVO: Precio unitario es negativo"
+  }
+]

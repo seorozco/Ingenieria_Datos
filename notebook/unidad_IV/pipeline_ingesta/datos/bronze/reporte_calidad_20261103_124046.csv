@@ -1,0 +1,2 @@
+id_raw,lote_id,tipo_error,descripcion,campo_afectado,valor_campo,es_critico
+1,LOTE_20261103_112725,PRECIO_NEGATIVO,Precio unitario es negativo,UnitPrice,-230.0,1
