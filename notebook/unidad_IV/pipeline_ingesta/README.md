@@ -17,12 +17,14 @@ python -m pip install -r notebook/unidad_IV/pipeline_ingesta/requirements.txt
 | 02 | [Profiling](02_profiling_contratos_invoice_line.ipynb) | [Profiling](02_profiling_contratos_Invoices.ipynb) |
 | 03 | [Cuarentena](03_cuarentena_reproceso_invoice_line.ipynb) | [Cuarentena](03_cuarentena_reproceso_Invoices.ipynb) |
 | 04 | [Staging](04_staging_invoice_line.ipynb) | [Staging](04_staging_Invoices.ipynb) |
-| 05 | [Dimensiones Kimball](../01_kimball_create_DIM.ipynb) | Compartido |
+| 05 | Dimensiones previamente cargadas en `dw` | Inspeccion auditada en el paso 7 |
 | 06 | [Tabla de hechos](06_hechos.ipynb) | Usa ambas ramas |
 | 07 | [Auditoria y publicacion](07_auditoria_publicacion.ipynb) | Compartido |
 | 08 | [Reporte integral y linaje](08_demo_integral.ipynb) | Compartido |
 
 Completar ambas ramas antes del paso 6. Ejecutar la celda final de cada notebook: una etapa sin cierre queda `EN_CURSO`, no `OK`.
+
+Las cinco dimensiones deben existir antes de cargar hechos. El paso 7 registra el linaje NK -> SK de las versiones observadas y su auditoria, sin modificar dimensiones ni depender de cambios en notebooks externos. Esa inspeccion no reconstruye la auditoria historica de su carga.
 
 ## Datos y controles
 
